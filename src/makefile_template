@@ -23,8 +23,8 @@ NETCDFINC = /usr/local/include
 BINDIR = /usr/local/bin
 #---Set the model domain---
 # (Need to change this to autodetect!)
-#DOMAIN=viking20_full
-DOMAIN=viking20_cut
+DOMAIN=viking20_full
+#DOMAIN=viking20_cut
 #===================================
 # Step 2:
 # Define compiler and linker
