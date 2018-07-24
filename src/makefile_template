@@ -39,7 +39,7 @@ LIBS=				# any additional libraries
 # Define library and program names (unlikely to change!)
 #===================================
 #
-PROG_SRC= tcdfhist.f90 ariane2tcdf.f90 tcdfsplit.f90 tcdfsort.f90
+PROG_SRC= tcdfhist.f90 ariane2tcdf.f90 tcdfsplit.f90 tcdfsort.f90 tcdfmerge.f90
 PROG_OBJ= ${PROG_SRC:.f90=.o}
 PROGRAMS= ${PROG_SRC:.f90=}
 UTILS_SRC= tcdfio.f90 gridsio.f90 basicfun.f90 
@@ -78,6 +78,9 @@ tcdfsplit: gridsio.o tcdfio.o basicfun.o tcdfsplit.o
 tcdfsort: gridsio.o tcdfio.o basicfun.o tcdfsort.o
 	$(LINK) $(LDFLAGS) gridsio.o tcdfio.o basicfun.o tcdfsort.o -o tcdfsort $(LIBS) -L${NETCDFLIB} -lnetcdff
 #
+tcdfmerge: gridsio.o tcdfio.o basicfun.o tcdfmerge.o
+	$(LINK) $(LDFLAGS) gridsio.o tcdfio.o basicfun.o tcdfmerge.o -o tcdfmerge $(LIBS) -L${NETCDFLIB} -lnetcdff
+#
 #===================================
 # Step 6:
 # Object dependencies
@@ -103,5 +106,8 @@ tcdfsplit.o:	tcdfsplit.f90
 #
 tcdfsort.o: 	tcdfsort.f90
 	$(FC) $(FFLAGS) tcdfsort.f90
+#
+tcdfmerge.o:	tcdfmerge.f90
+	$(FC) $(FFLAGS) tcdfmerge.f90
 #
 #===================================
