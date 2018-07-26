@@ -21,7 +21,9 @@ tool from ARIANE is included.
 From the ./src directory,
 
 $ set_tcdf_prefix.sh /usr/local
+
 $ make tcdf
+
 $ make install
 
 The first line specifies the prefix where to look for

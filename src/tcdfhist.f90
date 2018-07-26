@@ -57,10 +57,26 @@
 ! -Y latitude
 ! -Z depth
 !
-! IMPROVEMENTS: Allow for automatic detection
+! WISH LIST: Allow for automatic detection
 ! of 1, 2, 3, or 4 sorting axes and set
 ! program running in 1, 2, 3, or 4 dimension
-! modes.
+! modes.  I don't think anyone would want
+! more than 4 dims because it will be hard
+! to visualize.  Some possible useful combos:
+! X,Y,1,1
+! X,Y,Z,1
+! X,Y,Z,time
+! T,S,1,1
+! T,S,1,time
+! T,S,Z,time
+! Note that time is always the last dimension.
+! For compatibility with the contour finder,
+! any 4D hist will be disqualified and only
+! 2D (time flattened) or 3D (2D + time) will
+! be allowed.  In the first case, just one
+! contour will be created.  In the second case,
+! many contour slices will be created.
+! Also allow for 1D and 1D+time cases.
 !
 ! Unused -G, -J
 !
@@ -553,6 +569,22 @@
            dep_hold = 0.0
         endif
 
+        if ( lp ) then
+           ! If the user specified time limits, then
+           ! keep them as they are.
+        else
+           ! The default time limits are not particularly
+           ! useful, so if the user did not specify
+           ! time limits, make something more sane
+           ! (all time steps by default).
+           ! WORKING HERE
+           write(*,*)'Auto reset time domain for all time steps!'
+           pmin = 1
+           pmax = npts
+           pskip = 0
+           write(*,*)'Prop: ',trim(arg_flag),' spans ',pmin,pmax,' skip ',pskip
+        endif
+        
         if ( lxo ) allocate(lam(npts,1))
         if ( lyo ) allocate(phi(npts,1))
         if ( lzo ) allocate(dep(npts,1))
