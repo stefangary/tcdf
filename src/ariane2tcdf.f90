@@ -131,9 +131,10 @@
         character(len=10) :: arg_real
 
         ! Flags
-        logical :: li, lh, lp, lhelp
+        logical :: li, lh, lp, l_help
         logical :: lm, lq, ls, lt, lj
-
+        logical :: l_verbose
+        
         ! Default values for flags
         li = .false.
         lj = .false.
@@ -143,8 +144,9 @@
         lq = .false.
         ls = .false.
         lt = .false.
-        lhelp = .false.
-
+        l_help = .false.
+        l_verbose = .false.
+        
         !------Get command line information------
         ! First argument: Name of file to restart.
         num_command_arg = command_argument_count()
@@ -217,8 +219,11 @@
                  lq = .true.
               elseif ( index(trim(arg_flag),'-h') .ne. 0 ) then
                  ! Pring help and quit
-                 lhelp = .true.
+                 l_help = .true.
                  call print_help()
+              elseif ( index(trim(arg_flag),'-v') .ne. 0 ) then
+                 ! Verbose output
+                 l_verbose = .true.
               else
                  write(*,*) 'ERROR: Unknown command line flag!'
                  stop
@@ -240,7 +245,7 @@
            stop
         endif
 
-        write(*,*) 'Get variable IDs...'
+        if ( l_verbose ) write(*,*) 'Get variable IDs...'
         ilamvid = ncvid(ncfid,ilamvnam,exitcode)
         iphivid = ncvid(ncfid,iphivnam,exitcode)
         idepvid = ncvid(ncfid,idepvnam,exitcode)
@@ -256,8 +261,8 @@
         endif
 
         !------Create and define the tcdf output file------
-        
-        write(*,*) ' Creating output tcdf file...'
+
+        if ( l_verbose ) write(*,*) ' Creating output tcdf file...'
         ncoid = nccre(out_file_name,ncclobber,exitcode)
 
         ! Define dimensions.  Note that we set the traj dimension
@@ -269,14 +274,14 @@
         ! the longer dimension unlimited with a 0 length.  To
         ! convert back to normal lengths, change the "0" to
         ! "number".
-        write(*,*) ' Creating Traj and time dimensions...'
+        if ( l_verbose ) write(*,*) ' Creating Traj and time dimensions...'
         timedid = ncddef(ncoid,timednam,npts,exitcode)
         trajdid = ncddef(ncoid,trajdnam,0,exitcode)
 
         vdims_out(1) = timedid
         vdims_out(2) = trajdid
          
-        write(*,*) ' Creating Lam, phi, dep variables...'
+        if ( l_verbose ) write(*,*) ' Creating Lam, phi, dep variables...'
         call cre_lag_var(ncoid,lamvnam,lp)
         call cre_lag_var(ncoid,phivnam,lp)
         call cre_lag_var(ncoid,depvnam,lp)
@@ -294,10 +299,10 @@
            call cre_lag_var(ncoid,saltvnam,lp)
         endif
 
-        write(*,*) ' Ending output file definition stage...'
+        if ( l_verbose ) write(*,*) ' Ending output file definition stage...'
         call ncendf(ncoid,exitcode)
 
-        write(*,*) ' Allocating space for one trajectory...'        
+        if ( l_verbose ) write(*,*) ' Allocating space for one trajectory...'   
         allocate(ilam(1,npts))
         allocate(olam(npts,1))
         ilam = 0.0
@@ -410,7 +415,7 @@
         !========Loop over each trajectory from infile==========
         do t = 1,ntraj
 
-           write(*,*) 'For traj ',t,' of ',ntraj
+           if ( l_verbose ) write(*,*) 'For traj ',t,' of ',ntraj
 
            !write(*,*) 'Specify the read/write vectors...'
            lag_readst2d(1) = t
@@ -573,7 +578,7 @@
 
         enddo
         !---------------------------------------------------
-        write(*,*) 'Cleaning up...'
+        if ( l_verbose ) write(*,*) 'Cleaning up...'
         deallocate(ilam,olam)
         deallocate(iphi,ophi)
         deallocate(idep,odep)
@@ -593,13 +598,13 @@
            deallocate(isalt,osalt)
         endif
 
-        write(*,*) ' Closing input file...'
+        if ( l_verbose ) write(*,*) ' Closing input file...'
         call ncclos(ncfid,exitcode)
 
-        write(*,*) ' Closing output file...'
+        if ( l_verbose ) write(*,*) ' Closing output file...'
         call ncclos(ncoid,exitcode)
 
-        write(*,*) 'End of ariane2tcdf_3.'
+        write(*,*) 'End of ariane2tcdf.'
 
       end program ariane2tcdf
 
@@ -614,7 +619,7 @@ subroutine print_help()
   write(*,*) 'ariane2tcdf version 3'
   write(*,*) 'Usage:'
   write(*,*) 'ariane2tcdf -I filename'
-  write(*,*) ' [-P] [-H] [-M] [-q] [-h] [-T] [-S]'
+  write(*,*) ' [-P] [-H] [-M] [-q] [-h] [-T] [-S] [-v]'
   write(*,*) ' '
   write(*,*) ' -I specifies input.  Output is t.cdf'
   write(*,*) ' -P activates packing of data into short ints'
@@ -633,6 +638,7 @@ subroutine print_help()
   write(*,*) '    with fractional positions within boxes'
   write(*,*) '    retained.'
   write(*,*) ' -h prints this message and quits'
+  write(*,*) ' -v verbose mode'
   write(*,*) ' '
   write(*,*) ' Eventually, would be nice to add'
   write(*,*) ' -R flag for density.'
