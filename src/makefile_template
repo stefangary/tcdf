@@ -49,7 +49,8 @@ UTILS_OBJ=${UTILS_SRC:.f90=.o}
 # Set make actions to install, e.g.
 # make tcdf
 # make install
-# make clean
+# make clean - NOTE MAKEFILE IS DELETED BECAUSE
+#              set_tcdf_prefix.sh BASED ON MAKEFILE_TEMPLATE
 #===================================
 #
 tcdf:		$(PROGRAMS)
@@ -59,7 +60,7 @@ install:	tcdf
 		mv $(PROGRAMS) $(BINDIR)
 #
 clean:
-		rm -f $(PROG_OBJ) $(UTILS_OBJ) $(PROGRAMS) *.mod
+		rm -f $(PROG_OBJ) $(UTILS_OBJ) $(PROGRAMS) *.mod makefile
 #
 #===================================
 # Step 5:
