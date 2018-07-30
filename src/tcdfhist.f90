@@ -94,7 +94,12 @@
         implicit none
 
         ! Dimensionality of the program
-        integer, parameter :: nax_max = 2
+        ! Note output variable will always
+        ! have 4 dimensions.
+        ! Some dimensions can
+        ! just have a length of 1, and if so,
+        ! they are labeled as dummy dims.
+        integer, parameter :: nax_max = 4
         integer :: nax_pt_found
 
         ! File, dimension, and variable IDs
@@ -111,7 +116,6 @@
 
         integer :: writstart(nax_max)
         integer :: writcount(nax_max)
-        character(len=1) :: xdnam(nax_max)
         integer :: ax_did(nax_max)
         integer :: ax_vid(nax_max)
         character(len=4) :: ax_vnam(nax_max)
@@ -128,12 +132,12 @@
         integer :: nout
 
         ! Counters
-        ! i = axis1, j = axis2, k = axis3
-        ! p = points(time), t = traj
-        integer :: i, j, k, t, p
+        ! i = axis1, j = axis2, k = axis3, l = axis4
+        ! p = points, t = traj
+        integer :: i, j, k, l, t, p
 
-        ! Lagrangian variables (axis, npts, time)
-        real, allocatable :: lag_var(:,:,:)
+        ! Lagrangian variables (axis, npts)
+        real, allocatable :: lag_var(:,:)
         real, allocatable :: temp_hold(:,:)
         real, allocatable :: salt_hold(:,:)
         real, allocatable :: top_hold(:,:)
@@ -171,7 +175,8 @@
         logical :: lx, ly, lz, lll, ltt
 
         logical :: lxo, lyo, lzo, lto, lao, lco, lro
-
+        logical :: l_quick
+        
         ! Default values for time steps to use
         integer :: pmin = 1
         integer :: pmax = 1
@@ -181,8 +186,8 @@
         ! Numbers of histoboxes
         ! (to be calculated from the
         ! domain values specified above)
-        integer, allocatable :: ne(:)
-        integer, allocatable :: nc(:)
+        integer :: ne(nax_max)
+        integer :: nc(nax_max)
         integer :: nax
         integer :: nc_max
 
@@ -193,21 +198,21 @@
         real, allocatable :: centers(:,:)
 
         ! Histogram
-        integer, allocatable :: hist(:,:)
+        integer, allocatable :: hist(:,:,:,:)
 
         ! Avg and var of requested variables
-        real, allocatable :: xavg(:,:), xvar(:,:)
-        real, allocatable :: yavg(:,:), yvar(:,:)
-        real, allocatable :: zavg(:,:), zvar(:,:)
-        real, allocatable :: tavg(:,:), tvar(:,:)
-        real, allocatable :: aavg(:,:), avar(:,:)
-        real, allocatable :: cavg(:,:), cvar(:,:)
-        real, allocatable :: ravg(:,:), rvar(:,:)
+        real, allocatable :: xavg(:,:,:,:), xvar(:,:,:,:)
+        real, allocatable :: yavg(:,:,:,:), yvar(:,:,:,:)
+        real, allocatable :: zavg(:,:,:,:), zvar(:,:,:,:)
+        real, allocatable :: tavg(:,:,:,:), tvar(:,:,:,:)
+        real, allocatable :: aavg(:,:,:,:), avar(:,:,:,:)
+        real, allocatable :: cavg(:,:,:,:), cvar(:,:,:,:)
+        real, allocatable :: ravg(:,:,:,:), rvar(:,:,:,:)
 
-        integer, allocatable :: xcnt(:,:), ycnt(:,:)
-        integer, allocatable :: zcnt(:,:), tcnt(:,:)
-        integer, allocatable :: acnt(:,:), ccnt(:,:)
-        integer, allocatable :: rcnt(:,:)
+        integer, allocatable :: xcnt(:,:,:,:), ycnt(:,:,:,:)
+        integer, allocatable :: zcnt(:,:,:,:), tcnt(:,:,:,:)
+        integer, allocatable :: acnt(:,:,:,:), ccnt(:,:,:,:)
+        integer, allocatable :: rcnt(:,:,:,:)
 
         real :: time_scale_factor
 
@@ -228,6 +233,7 @@
         lm = .false.
         ln = .false.
         lo = .false.
+        l_quick = .false.
         lp = .false.
         lq = .false.
         lr = .false.
@@ -252,12 +258,32 @@
         ! Initialize number of axis counter
         nax = 0
 
+        ! Initialize the axis names and sizes to defaults
+        ! if the number of requested axes is less than the
+        ! total available axes (4).
+        ! WORKING HERE
+        writstart = 1 
+        writcount = 1
+        ax_vnam(1) = 'xxx1'
+        ax_vnam(2) = 'xxx2'
+        ax_vnam(3) = 'xxx3'
+        ax_vnam(4) = 'xxx4'
+        
+        ! Axis limits
+        ax_min = 0.0
+        ax_max = 0.0
+        ax_del = 0.0
+        ! Note that for axes that are not used, this
+        ! index will stay at 1 the whole time.
+        ax_ind = 1
+
+        
         !------Get command line information------
         ! First argument: Name of file to restart.
         num_command_arg = command_argument_count()
        
-        if(num_command_arg .lt. 10) then
-           write(*,*) ' Error: Must specify at least 2 axes and 1 input file!'
+        if(num_command_arg .lt. 6) then
+           write(*,*) ' Error: Must specify at least 1 axis and 1 input file!'
            call print_help()
            stop
         else
@@ -339,6 +365,10 @@
               elseif ( index(trim(arg_flag),'-O') .ne. 0 ) then
                  ! Verbose mode
                  lo = .true.
+
+              elseif ( index(trim(arg_flag),'-q') .ne. 0 ) then
+                 ! Quick time binning mode
+                 l_quick = .true.
 
               elseif ( index(trim(arg_flag),'-l') .ne. 0 ) then
                  ! Use top2/bot2 instead of top1/bot1.
@@ -538,12 +568,12 @@
         endif
 
         ! Data loading and/or set up
-        write(*,*) 'Allocating space...'
-        allocate(ne(nax))
-        allocate(nc(nax))
-        allocate(lag_var(nax,npts,1))
-        ne = 0
-        nc = 0
+        if (lo) write(*,*) 'Allocating space...'
+        allocate(lag_var(nax,npts))
+        ! By default, the number of boxes is 1 (a collapsed axis)
+        ! and the number of edges is 2 (2 edges around a single box).
+        ne = 2
+        nc = 1
         lag_var = 0.0
         nc_max = 0
 
@@ -577,12 +607,11 @@
            ! useful, so if the user did not specify
            ! time limits, make something more sane
            ! (all time steps by default).
-           ! WORKING HERE
            write(*,*)'Auto reset time domain for all time steps!'
            pmin = 1
            pmax = npts
            pskip = 0
-           write(*,*)'Prop: ',trim(arg_flag),' spans ',pmin,pmax,' skip ',pskip
+           write(*,*)'Prop: -P spans ',pmin,pmax,' skip ',pskip
         endif
         
         if ( lxo ) allocate(lam(npts,1))
@@ -597,6 +626,8 @@
 
         write(*,*) '------------------------------------'
         write(*,*) ' Grid (min,max,delta,npts)'
+        ! Loop over just the axes that are specified.
+        ! The remaining axes will have nc = 1, ne = 2.
         do k = 1,nax
            ! Number of boxes
            nc(k) = aint((ax_max(k) - ax_min(k))/ax_del(k))
@@ -613,59 +644,59 @@
         write(*,*) '------------------------------------'
 
         write(*,*) 'Allocate space for histogram...'
-        allocate(hist(nc(1),nc(2)))
+        allocate(hist(nc(1),nc(2),nc(3),nc(4)))
         if (lxo) then
-           allocate(xavg(nc(1),nc(2)))
-           allocate(xvar(nc(1),nc(2)))
-           allocate(xcnt(nc(1),nc(2)))
+           allocate(xavg(nc(1),nc(2),nc(3),nc(4)))
+           allocate(xvar(nc(1),nc(2),nc(3),nc(4)))
+           allocate(xcnt(nc(1),nc(2),nc(3),nc(4)))
            xavg = lam_mask
            xvar = lam_mask
            xcnt = 0
         endif
         if (lyo) then
-           allocate(yavg(nc(1),nc(2)))
-           allocate(yvar(nc(1),nc(2)))
-           allocate(ycnt(nc(1),nc(2)))
+           allocate(yavg(nc(1),nc(2),nc(3),nc(4)))
+           allocate(yvar(nc(1),nc(2),nc(3),nc(4)))
+           allocate(ycnt(nc(1),nc(2),nc(3),nc(4)))
            yavg = phi_mask
            yvar = phi_mask
            ycnt = 0
         endif
         if (lzo) then
-           allocate(zavg(nc(1),nc(2)))
-           allocate(zvar(nc(1),nc(2)))
-           allocate(zcnt(nc(1),nc(2)))
+           allocate(zavg(nc(1),nc(2),nc(3),nc(4)))
+           allocate(zvar(nc(1),nc(2),nc(3),nc(4)))
+           allocate(zcnt(nc(1),nc(2),nc(3),nc(4)))
            zavg = dep_mask
            zvar = dep_mask
            zcnt = 0
         endif
         if (lto) then
-           allocate(tavg(nc(1),nc(2)))
-           allocate(tvar(nc(1),nc(2)))
-           allocate(tcnt(nc(1),nc(2)))
+           allocate(tavg(nc(1),nc(2),nc(3),nc(4)))
+           allocate(tvar(nc(1),nc(2),nc(3),nc(4)))
+           allocate(tcnt(nc(1),nc(2),nc(3),nc(4)))
            tavg = t_mask
            tvar = t_mask
            tcnt = 0
         endif
         if (lao) then
-           allocate(aavg(nc(1),nc(2)))
-           allocate(avar(nc(1),nc(2)))
-           allocate(acnt(nc(1),nc(2)))
+           allocate(aavg(nc(1),nc(2),nc(3),nc(4)))
+           allocate(avar(nc(1),nc(2),nc(3),nc(4)))
+           allocate(acnt(nc(1),nc(2),nc(3),nc(4)))
            aavg = dtdz_mask
            avar = dtdz_mask
            acnt = 0
         endif
         if (lco) then
-           allocate(cavg(nc(1),nc(2)))
-           allocate(cvar(nc(1),nc(2)))
-           allocate(ccnt(nc(1),nc(2)))
+           allocate(cavg(nc(1),nc(2),nc(3),nc(4)))
+           allocate(cvar(nc(1),nc(2),nc(3),nc(4)))
+           allocate(ccnt(nc(1),nc(2),nc(3),nc(4)))
            cavg = age_mask
            cvar = age_mask
            ccnt = 0
         endif
         if (lro) then
-           allocate(ravg(nc(1),nc(2)))
-           allocate(rvar(nc(1),nc(2)))
-           allocate(rcnt(nc(1),nc(2)))
+           allocate(ravg(nc(1),nc(2),nc(3),nc(4)))
+           allocate(rvar(nc(1),nc(2),nc(3),nc(4)))
+           allocate(rcnt(nc(1),nc(2),nc(3),nc(4)))
            ravg = r_mask
            rvar = r_mask
            rcnt = 0
@@ -680,6 +711,7 @@
         allocate(centers(nax,nc_max))
 
         write(*,*) 'Compute histobox edges and centers...'
+        ! Only loop over the active axes.
         do k = 1,nax
 
            ! Set minimum edge value
@@ -711,12 +743,12 @@
         ncoid = nccre(histfname,ncclobber,exitcode)
 
         write(*,*) 'Creating dimensions...'
-        do k = 1,nax
+        do k = 1,nax_max
            ax_did(k) = ncddef(ncoid,ax_vnam(k),nc(k),exitcode)
         enddo
 
         write(*,*) 'Creating variables...'
-        do k = 1,nax
+        do k = 1,nax_max
            ax_vid(k) = ncvdef(ncoid,ax_vnam(k),ncfloat,1,ax_did(k),exitcode)
            if ( index(trim(ax_vnam(k)),'dep') .ne. 0 ) then
               ! Indicate in netcdf file that this axis is
@@ -767,12 +799,15 @@
         call ncendf(ncoid,exitcode)
 
         write(*,*) 'Writing node locations to output file...'
-        do k = 1,nax
+        do k = 1,nax_max
            if ( ltt .and. ((index(trim(ax_vnam(k)),agevnam) .ne. 0) .or.&
                            (index(trim(ax_vnam(k)),'lpts') .ne. 0)) ) then
               write(*,*) 'Dividing the time axis by ',time_scale_factor
               call ncvpt(ncoid,ax_vid(k),1,nc(k), &
-                         centers(k,1:nc(k))/time_scale_factor,exitcode)
+                   centers(k,1:nc(k))/time_scale_factor,exitcode)
+           elseif ( index(trim(ax_vnam(k)),'xxx') .ne. 0 ) then
+              ! Empty axis, 1 unit long
+              call ncvpt(ncoid,ax_vid(k),1,1,1.0,exitcode)
            else
               ! Proceed as normal
               call ncvpt(ncoid,ax_vid(k),1,nc(k),centers(k,1:nc(k)),exitcode)
@@ -780,7 +815,7 @@
         enddo
 
         ! Writing vectors are not affected by input file.
-        do k = 1,nax
+        do k = 1,nax_max
            writstart(k) = 1
            writcount(k) = nc(k)
         enddo
@@ -808,11 +843,14 @@
            ! one time series corresponding to each
            ! of the binning dimensions.
            do k = 1,nax
-              if ( index(trim(ax_vnam(k)),'lpts') .ne. 0 ) then
+              if ( index(trim(ax_vnam(k)),'xxx') .ne. 0 ) then
+                 ! This axis is a dummy axis, so do nothing.
+                 ! This will keep lag_var(k,:) = 0.0
+              elseif ( index(trim(ax_vnam(k)),'lpts') .ne. 0 ) then
                  ! We construct age from the index value
                  ! of time along the trajectory.
                  do i = 1,npts
-                    lag_var(k,i,1) = i
+                    lag_var(k,i) = i
                  enddo
               elseif ( index(trim(ax_vnam(k)),'disp') .ne. 0 ) then
                  ! We need to load x, y, and z Lagrangian
@@ -835,13 +873,13 @@
                          (salt_hold(i,1) .gt. 50.0) .or. &
                          (salt_hold(i,1) .lt. 0.0) ) then
                        ! Flag with a fill value
-                       lag_var(k,i,1) = r_mask
+                       lag_var(k,i) = r_mask
                     else
                        ! Good value!
                        ! DISABLED FOR NOW
-                       !lag_var(k,i,1) = sigthet(0.0,temp_hold(i,1),&
+                       !lag_var(k,i) = sigthet(0.0,temp_hold(i,1),&
                        !     salt_hold(i,1))
-                       lag_var(k,i,1) = r_mask
+                       lag_var(k,i) = r_mask
                     endif
                  enddo
               elseif ( index(trim(ax_vnam(k)),'perc') .ne. 0 ) then
@@ -861,16 +899,16 @@
                        ! (even for the thinnest possible layer ~10m,
                        ! the particle is ~1000x above that layer,
                        ! which is beyond the depth of the ocean).
-                       lag_var(k,i,1) = 999.9
+                       lag_var(k,i) = 999.9
                     else
-                       lag_var(k,i,1) = ((bot_hold(i,1) - dep_hold(i,1))/&
+                       lag_var(k,i) = ((bot_hold(i,1) - dep_hold(i,1))/&
                                          (bot_hold(i,1) - top_hold(i,1)))
                     endif
                  enddo
               else
                  ! All other normal Lagrangian variables
                  ! are read directly from the input file.
-                 call get_lag_var(ncfid,ax_vnam(k),lag_var(k,:,1))
+                 call get_lag_var(ncfid,ax_vnam(k),lag_var(k,:))
               endif
            enddo
 
@@ -945,10 +983,16 @@
                  do k = 1,nax
 
                     ! WORKING HERE
-                    !write(*,*) k, p, lag_var(k,p,1)
-
-                    ax_ind(k) = binsearch(edges(k,:),lag_var(k,p,1),1,ne(k))
-
+                    !write(*,*) k, p, lag_var(k,p)
+                    if ( (index(trim(ax_vnam(k)),'lpts') .ne. 0) .and. l_quick ) then
+                       ! Don't need to search for the time bin since
+                       ! time is monotonically increasing.
+                       ax_ind(k) = p
+                    else
+                       ! Search for a bin
+                       ax_ind(k) = binsearch(edges(k,:),lag_var(k,p),1,ne(k))
+                    endif
+                    
                     ! Check that the point was found in the domain
                     if (ax_ind(k) .gt. 0) nax_pt_found = nax_pt_found + 1
                  enddo
@@ -961,7 +1005,8 @@
                     ! so we have found a valid point.
 
                     ! Add one to the histogram
-                    hist(ax_ind(1),ax_ind(2)) = hist(ax_ind(1),ax_ind(2)) + 1
+                    hist(ax_ind(1),ax_ind(2),ax_ind(3),ax_ind(4)) = &
+                         hist(ax_ind(1),ax_ind(2),ax_ind(3),ax_ind(4)) + 1
                       
                     ! Add one to the total number of valid points
                     nall = nall + 1
@@ -970,46 +1015,70 @@
                     ! variance of requested properties at this
                     ! location.
                     if ( lxo ) then
-                       call olavgvar(lam(p,1),xcnt(ax_ind(1),ax_ind(2)),&
-                                              xavg(ax_ind(1),ax_ind(2)),&
-                                              xvar(ax_ind(1),ax_ind(2)))
+                       call olavgvar(lam(p,1),xcnt(ax_ind(1),ax_ind(2),&
+                                                   ax_ind(3),ax_ind(4)),&
+                                              xavg(ax_ind(1),ax_ind(2),&
+                                                   ax_ind(3),ax_ind(4)),&
+                                              xvar(ax_ind(1),ax_ind(2),&
+                                                   ax_ind(3),ax_ind(4)))
                     endif
                     if ( lyo ) then
-                       call olavgvar(phi(p,1),ycnt(ax_ind(1),ax_ind(2)),&
-                                              yavg(ax_ind(1),ax_ind(2)),&
-                                            yvar(ax_ind(1),ax_ind(2)))
+                       call olavgvar(phi(p,1),ycnt(ax_ind(1),ax_ind(2),&
+                                                   ax_ind(3),ax_ind(4)),&
+                                              yavg(ax_ind(1),ax_ind(2),&
+                                                   ax_ind(3),ax_ind(4)),&
+                                              yvar(ax_ind(1),ax_ind(2),&
+                                                   ax_ind(3),ax_ind(4)))
                     endif
                     if ( lzo ) then
-                       call olavgvar(dep(p,1),zcnt(ax_ind(1),ax_ind(2)),&
-                                              zavg(ax_ind(1),ax_ind(2)),&
-                                              zvar(ax_ind(1),ax_ind(2)))
+                       call olavgvar(dep(p,1),zcnt(ax_ind(1),ax_ind(2),&
+                                                   ax_ind(3),ax_ind(4)),&
+                                              zavg(ax_ind(1),ax_ind(2),&
+                                                   ax_ind(3),ax_ind(4)),&
+                                              zvar(ax_ind(1),ax_ind(2),&
+                                                   ax_ind(3),ax_ind(4)))
                     endif
                     if ( lto ) then
-                       call olavgvar(temp(p,1),tcnt(ax_ind(1),ax_ind(2)),&
-                                               tavg(ax_ind(1),ax_ind(2)),&
-                                               tvar(ax_ind(1),ax_ind(2)))
+                       call olavgvar(temp(p,1),tcnt(ax_ind(1),ax_ind(2),&
+                                                    ax_ind(3),ax_ind(4)),&
+                                               tavg(ax_ind(1),ax_ind(2),&
+                                                    ax_ind(3),ax_ind(4)),&
+                                               tvar(ax_ind(1),ax_ind(2),&
+                                                    ax_ind(3),ax_ind(4)))
                     endif
                     if ( lao ) then
-                       call olavgvar(dtdz(p,1),acnt(ax_ind(1),ax_ind(2)),&
-                                               aavg(ax_ind(1),ax_ind(2)),&
-                                               avar(ax_ind(1),ax_ind(2)))
+                       call olavgvar(dtdz(p,1),acnt(ax_ind(1),ax_ind(2),&
+                                                    ax_ind(3),ax_ind(4)),&
+                                               aavg(ax_ind(1),ax_ind(2),&
+                                                    ax_ind(3),ax_ind(4)),&
+                                               avar(ax_ind(1),ax_ind(2),&
+                                                    ax_ind(3),ax_ind(4)))
                     endif
                     if ( lco ) then
                        if ( ltt ) then
                           ! Divide by the time_scale_factor
-                          call olavgvar(real(p)/time_scale_factor,ccnt(ax_ind(1),ax_ind(2)),&
-                                                                  cavg(ax_ind(1),ax_ind(2)),&
-                                                                  cvar(ax_ind(1),ax_ind(2)))
+                          call olavgvar(real(p)/time_scale_factor,ccnt(ax_ind(1),ax_ind(2),&
+                                                                       ax_ind(3),ax_ind(4)),&
+                                                                  cavg(ax_ind(1),ax_ind(2),&
+                                                                       ax_ind(3),ax_ind(4)),&
+                                                                  cvar(ax_ind(1),ax_ind(2),&
+                                                                       ax_ind(3),ax_ind(4)))
                        else
-                          call olavgvar(real(p),ccnt(ax_ind(1),ax_ind(2)),&
-                                                cavg(ax_ind(1),ax_ind(2)),&
-                                                cvar(ax_ind(1),ax_ind(2)))
+                          call olavgvar(real(p),ccnt(ax_ind(1),ax_ind(2),&
+                                                     ax_ind(3),ax_ind(4)),&
+                                                cavg(ax_ind(1),ax_ind(2),&
+                                                     ax_ind(3),ax_ind(4)),&
+                                                cvar(ax_ind(1),ax_ind(2),&
+                                                     ax_ind(3),ax_ind(4)))
                        endif
                     endif
                     if ( lro ) then
-                       call olavgvar(rho(p,1),rcnt(ax_ind(1),ax_ind(2)),&
-                                              ravg(ax_ind(1),ax_ind(2)),&
-                                              rvar(ax_ind(1),ax_ind(2)))
+                       call olavgvar(rho(p,1),rcnt(ax_ind(1),ax_ind(2),&
+                                                   ax_ind(3),ax_ind(4)),&
+                                              ravg(ax_ind(1),ax_ind(2),&
+                                                   ax_ind(3),ax_ind(4)),&
+                                              rvar(ax_ind(1),ax_ind(2),&
+                                                   ax_ind(3),ax_ind(4)))
                     endif
 
                  else
@@ -1041,60 +1110,64 @@
 
         ! Final computations for the standard deviation
         ! of the variables.
-        do j = 1,nc(2)
-           do i = 1,nc(1)
-              if (lxo) then
-                 ! Check that all boxes are good.
-                 if ((xcnt(i,j).eq.0).or.(xavg(i,j).eq.lam_mask)) then
-                    ! Bad point
-                    xvar(i,j) = 0.0
-                 else
-                    ! Good point
-                    xvar(i,j) = sqrt(xvar(i,j)/float(xcnt(i,j)))
-                 endif
-              endif
-              if (lyo) then
-                 if ((ycnt(i,j).eq.0).or.(yavg(i,j).eq.phi_mask)) then
-                    yvar(i,j) = 0.0
-                 else
-                    yvar(i,j) = sqrt(yvar(i,j)/float(ycnt(i,j)))
-                 endif
-              endif
-              if (lzo) then
-                 if ((zcnt(i,j).eq.0).or.(zavg(i,j).eq.dep_mask)) then
-                    zvar(i,j) = 0.0
-                 else
-                    zvar(i,j) = sqrt(zvar(i,j)/float(zcnt(i,j)))
-                 endif
-              endif
-              if (lto) then
-                 if ((tcnt(i,j).eq.0).or.(tavg(i,j).eq.t_mask)) then
-                    tvar(i,j) = 0.0
-                 else
-                    tvar(i,j) = sqrt(tvar(i,j)/float(tcnt(i,j)))
-                 endif
-              endif
-              if (lao) then
-                 if ((acnt(i,j).eq.0).or.(aavg(i,j).eq.dtdz_mask)) then
-                    avar(i,j) = 0.0
-                 else
-                    avar(i,j) = sqrt(avar(i,j)/float(acnt(i,j)))
-                 endif
-              endif
-              if (lco) then
-                 if ((ccnt(i,j).eq.0).or.(cavg(i,j).eq.age_mask)) then
-                    cvar(i,j) = 0.0
-                 else
-                    cvar(i,j) = sqrt(cvar(i,j)/float(ccnt(i,j)))
-                 endif
-              endif
-              if (lro) then
-                 if ((rcnt(i,j).eq.0).or.(ravg(i,j).eq.r_mask)) then
-                    rvar(i,j) = 0.0
-                 else
-                    rvar(i,j) = sqrt(rvar(i,j)/float(rcnt(i,j)))
-                 endif
-              endif
+        do l = 1,nc(4)
+           do k = 1,nc(3)
+              do j = 1,nc(2)
+                 do i = 1,nc(1)
+                    if (lxo) then
+                       ! Check that all boxes are good.
+                       if ((xcnt(i,j,k,l).eq.0).or.(xavg(i,j,k,l).eq.lam_mask)) then
+                          ! Bad point
+                          xvar(i,j,k,l) = 0.0
+                       else
+                          ! Good point
+                          xvar(i,j,k,l) = sqrt(xvar(i,j,k,l)/float(xcnt(i,j,k,l)))
+                       endif
+                    endif
+                    if (lyo) then
+                       if ((ycnt(i,j,k,l).eq.0).or.(yavg(i,j,k,l).eq.phi_mask)) then
+                          yvar(i,j,k,l) = 0.0
+                       else
+                          yvar(i,j,k,l) = sqrt(yvar(i,j,k,l)/float(ycnt(i,j,k,l)))
+                       endif
+                    endif
+                    if (lzo) then
+                       if ((zcnt(i,j,k,l).eq.0).or.(zavg(i,j,k,l).eq.dep_mask)) then
+                          zvar(i,j,k,l) = 0.0
+                       else
+                          zvar(i,j,k,l) = sqrt(zvar(i,j,k,l)/float(zcnt(i,j,k,l)))
+                       endif
+                    endif
+                    if (lto) then
+                       if ((tcnt(i,j,k,l).eq.0).or.(tavg(i,j,k,l).eq.t_mask)) then
+                          tvar(i,j,k,l) = 0.0
+                       else
+                          tvar(i,j,k,l) = sqrt(tvar(i,j,k,l)/float(tcnt(i,j,k,l)))
+                       endif
+                    endif
+                    if (lao) then
+                       if ((acnt(i,j,k,l).eq.0).or.(aavg(i,j,k,l).eq.dtdz_mask)) then
+                          avar(i,j,k,l) = 0.0
+                       else
+                          avar(i,j,k,l) = sqrt(avar(i,j,k,l)/float(acnt(i,j,k,l)))
+                       endif
+                    endif
+                    if (lco) then
+                       if ((ccnt(i,j,k,l).eq.0).or.(cavg(i,j,k,l).eq.age_mask)) then
+                          cvar(i,j,k,l) = 0.0
+                       else
+                          cvar(i,j,k,l) = sqrt(cvar(i,j,k,l)/float(ccnt(i,j,k,l)))
+                       endif
+                    endif
+                    if (lro) then
+                       if ((rcnt(i,j,k,l).eq.0).or.(ravg(i,j,k,l).eq.r_mask)) then
+                          rvar(i,j,k,l) = 0.0
+                       else
+                          rvar(i,j,k,l) = sqrt(rvar(i,j,k,l)/float(rcnt(i,j,k,l)))
+                       endif
+                    endif
+                 enddo
+              enddo
            enddo
         enddo
 
@@ -1163,8 +1236,10 @@
 !---------------------------------------
 
         write(*,*) '-------------------------------------------'
-        write(*,*) ' tcdfhist2d -<axis1> min max del'
-        write(*,*) '            -<axis2> min max del'
+        write(*,*) ' tcdfhist   -<axis1> min max del'
+        write(*,*) '           [-<axis2> min max del]'
+        write(*,*) '           [-<axis3> min max del]'
+        write(*,*) '           [-<axis4> min max del]'
         write(*,*) '            -I tcdf_input_file.nc'
         write(*,*) '           [-P pts_min pts_max p_skip]'
         write(*,*) '           [-F list_of_vars] [-l]'
@@ -1177,7 +1252,7 @@
         write(*,*) ' '
         write(*,*) '-------------------------------------------'
         write(*,*) ' '
-        write(*,*) ' The axes can be any TWO of:'
+        write(*,*) ' The axes can be any of:'
         write(*,*) ' -A dT/dz   [oC/m]'
         write(*,*) ' -B drho/dz [kg/m^4]'
         write(*,*) ' -C age     [time steps]'
@@ -1221,8 +1296,12 @@
         write(*,*) ' -O will print out traj number currently'
         write(*,*) '    working on so you can see progress.'
         write(*,*) ' '
-        write(*,*) ' -P will work over pts_min [1] to pts_max [1]'
+        write(*,*) ' -P will work over pts_min [1] to pts_max [all]'
         write(*,*) '    skipping every p_skip [0] points.'
+        write(*,*) ' '
+        write(*,*) ' -q will speed up time bin sorting only on'
+        write(*,*) '    the time axis by assuming time is'
+        write(*,*) '    monotonically increasing.'
         write(*,*) '-------------------------------------------'
         return
 
