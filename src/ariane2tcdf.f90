@@ -146,6 +146,8 @@
         lt = .false.
         l_help = .false.
         l_verbose = .false.
+
+        write(*,*) 'Starting ariane2tcdf...'
         
         !------Get command line information------
         ! First argument: Name of file to restart.
@@ -180,22 +182,24 @@
                  call checkexit(exitcode)
 
                  ! Test validity of input file name by opening input file.
-                 write(*,*) 'Open input netcdf file...'
+                 if(l_verbose) write(*,*) 'Open input netcdf file...'
                  ncfid = ncopn(trim(arg_string),ncnowrit,exitcode)
 
-                 write(*,*) 'Get dimension IDs...'
+                 if(l_verbose) write(*,*) 'Get dimension IDs...'
                  itimedid = ncdid(ncfid,itimednam,exitcode)
                  itrajdid = ncdid(ncfid,itrajdnam,exitcode)
 
-                 write(*,*) 'Get dimension sizes...'
+                 if(l_verbose) write(*,*) 'Get dimension sizes...'
                  call ncdinq(ncfid,itimedid,dummy,npts,exitcode)
                  call ncdinq(ncfid,itrajdid,dummy,ntraj,exitcode)
                  nall = npts*ntraj
-                 
-                 write(*,*) 'There are ',npts,' points in each traj.'
-                 write(*,*) 'There are ',ntraj,' trajectories.'
-                 write(*,*) 'There are ',nall,' total points to convert.'
 
+                 if(l_verbose) then
+                    write(*,*) 'There are ',npts,' points in each traj.'
+                    write(*,*) 'There are ',ntraj,' trajectories.'
+                    write(*,*) 'There are ',nall,' total points to convert.'
+                 endif
+                 
               elseif ( index(trim(arg_flag),'-J') .ne. 0 ) then
                  ! We will add iit,jjt - grid indeces.
                  lj = .true.
@@ -395,13 +399,13 @@
 
         ! Get missing values
         call ncagt(ncfid,ilamvid,'missing_value',lam_missing,exitcode)
-        write(*,*) 'Lon missing_value = ',lam_missing(1)
+        if(l_verbose) write(*,*) 'Lon missing_value = ',lam_missing(1)
         
         call ncagt(ncfid,iphivid,'missing_value',phi_missing,exitcode)
-        write(*,*) 'Lat missing_value = ',phi_missing(1)
+        if(l_verbose) write(*,*) 'Lat missing_value = ',phi_missing(1)
         
         call ncagt(ncfid,idepvid,'missing_value',dep_missing,exitcode)
-        write(*,*) 'Dep missing_value = ',dep_missing(1)
+        if(l_verbose) write(*,*) 'Dep missing_value = ',dep_missing(1)
         
         if ( lt ) then
            call ncagt(ncfid,itempvid,'missing_value',temp_missing,exitcode)
@@ -604,7 +608,7 @@
         if ( l_verbose ) write(*,*) ' Closing output file...'
         call ncclos(ncoid,exitcode)
 
-        write(*,*) 'End of ariane2tcdf.'
+        if ( l_verbose ) write(*,*) 'End of ariane2tcdf.'
 
       end program ariane2tcdf
 
