@@ -986,8 +986,16 @@
                     !write(*,*) k, p, lag_var(k,p)
                     if ( (index(trim(ax_vnam(k)),'lpts') .ne. 0) .and. l_quick ) then
                        ! Don't need to search for the time bin since
-                       ! time is monotonically increasing.
-                       ax_ind(k) = p
+                       ! time is monotonically increasing.  Note, we
+                       ! still need to ensure that ax_ind falls within
+                       ! the binning range requested by the user.
+                       if ( p .lt. edges(k,1) .or. p .gt. edges(k,ne(k)) ) then
+                          ! Outside binning domain
+                          ax_ind(k) = 0
+                       else
+                          ! Within binning domain
+                          ax_ind(k) = p
+                       endif
                     else
                        ! Search for a bin
                        ax_ind(k) = binsearch(edges(k,:),lag_var(k,p),1,ne(k))
