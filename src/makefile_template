@@ -41,7 +41,7 @@ LIBS=				# any additional libraries
 # Define library and program names (unlikely to change!)
 #===================================
 #
-PROG_SRC= tcdfhist.f90 ariane2tcdf.f90 tcdfsplit.f90 tcdfsort.f90 tcdfmerge.f90 tcdf_most_likely.f90
+PROG_SRC= tcdfhist.f90 ariane2tcdf.f90 tcdfsplit.f90 tcdfsort.f90 tcdfmerge.f90 tcdf_most_likely.f90 tcdf_flatten_hist.f90
 PROG_OBJ= ${PROG_SRC:.f90=.o}
 PROGRAMS= ${PROG_SRC:.f90=}
 UTILS_SRC= tcdfio.f90 gridsio.f90 basicfun.f90 
@@ -87,6 +87,9 @@ tcdfmerge: gridsio.o tcdfio.o basicfun.o tcdfmerge.o
 tcdf_most_likely: gridsio.o basicfun.o tcdf_most_likely.o
 	$(LINK) $(LDFLAGS) gridsio.o basicfun.o tcdf_most_likely.o -o tcdf_most_likely $(LIBS) -L${NETCDFLIB} -lnetcdff
 #
+tcdf_flatten_hist: gridsio.o basicfun.o tcdf_flatten_hist.o
+	$(LINK) $(LDFLAGS) gridsio.o basicfun.o tcdf_flatten_hist.o -o tcdf_flatten_hist $(LIBS) -L${NETCDFLIB} -lnetcdff
+#
 #===================================
 # Step 6:
 # Object dependencies
@@ -118,6 +121,9 @@ tcdfmerge.o:	tcdfmerge.f90
 #
 tcdf_most_likely.o:	tcdf_most_likely.f90
 	$(FC) $(FFLAGS) tcdf_most_likely.f90
+#
+tcdf_flatten_hist.o:	tcdf_flatten_hist.f90
+	$(FC) $(FFLAGS) tcdf_flatten_hist.f90
 #
 #===================================
 

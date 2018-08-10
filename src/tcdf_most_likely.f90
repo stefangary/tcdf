@@ -196,11 +196,52 @@
        writect4d(ii) = nc(ii)
     enddo
 
-    ! Although it is possible get more generality later,
+    ! Although it is possible to get more generality later,
     ! for our purposes here, we want to allow for two cases:
     ! 1) a 2D only histogram -> first two dimensions in tcdfhist.
     ! 2) a 3D only histogram with the last dimension in time
     ! Check that the fourth dimension size is 1.  If not, panic.
+    !
+    ! Thoughts on generality:
+    ! 1) Here, we need to consider input which could be up to 4D
+    ! and mask output which could be up to 4D too (although difficult
+    ! to see why you'd want to go to 4D).  In all cases, you can
+    ! always reduce the data (e.g. go from 4D to 2D) but not the
+    ! other way around.
+    !
+    ! 2) An nD->nD mapping is easy to do and no additional thought
+    ! needs to be put into it.  However, going down in dimensionality
+    ! means that there are two possible options: flatten a dimension
+    ! (i.e. if there is x,y,z binning, create an x,y map that is the
+    ! sum along all values of the z axis) and slice a dimension (i.e.
+    ! if we have x,y,time, we don't want to add up all the time
+    ! values, but rather we want x,y time-slices).  A complicated 4D
+    ! example would be to start with 4D (x,y,z,t) and result in
+    ! z-flattened and t-sliced 2D histomaps.  You could also start with
+    ! that same 4D data set and just t-slice to get a series of VOLUME
+    ! masks, not just AREA masks.  Sliced dimensions are not just binned
+    ! or free - the running tallies of probability and searchs for min
+    ! and max probability are kept separate and not merged with each
+    ! other.
+    !
+    ! One way to achieve this is to include -flatten and -slice flags
+    ! with the option of specifying dimension numbers
+    ! (e.g. -flatten 3 -slice 4) while checking here that there is
+    ! at least 1 free dimension and the flattened and sliced dimensions
+    ! do not overlap.  In the code, we would need to loop over each
+    ! dimension as we build the volume and check whether than dimension
+    ! is free, flattened, or sliced.
+    !
+    ! While this is nice, general way to view the data reduction,
+    ! at first glance it seems to be challenging to do this elegantly.
+    ! Perhaps it will be easier to keep things as they are where
+    ! the input is already pre-flattened and if any thrid dimension is
+    ! present, it is sliced.  This would preclude any 3D contours.
+    ! Although not very elegant, a separate routine for 3D contours
+    ! could be made.  3D contour finding will be more expensive
+    ! because a 3D search for the highest and next highest probability
+    ! must be done.
+    
     if ( nc(4) .ne. 1 ) then
        write(*,*) 'ERROR: 4th input dimension must be length 1.'
        write(*,*) 'Quit.'
@@ -279,7 +320,7 @@
     max_iterations = nc(1)*nc(2)
     
     ! Loop over all the instances of the 3D dimension
-    ! (this is the time dimension).
+    ! (this is the time dimension which will be sliced).
     do ll = 1,nc(3)
 
        ! Determine the total number of counts in the histogram
