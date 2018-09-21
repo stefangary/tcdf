@@ -419,7 +419,7 @@
 
         ! Variable ids for the input file
         integer :: uvid, vvid, wvid, tvid
-        integer :: svid, hvid, cvid
+        integer :: svid, hvid, cvid, kvid
         integer :: xvid, yvid, zvid
 
         !-------File Naming Conventions------

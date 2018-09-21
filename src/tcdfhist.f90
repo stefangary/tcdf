@@ -78,12 +78,7 @@
 ! many contour slices will be created.
 ! Also allow for 1D and 1D+time cases.
 !
-! Unused -G, -J
-!
-! added -K option.
-! added C to list of avg. variables.
-!   also added a scale factor to convert time
-!   variable, -t option.
+! Unused -J
 !----------------------------------------
 
         use netcdfio
@@ -149,7 +144,8 @@
         real, allocatable :: temp(:,:)
         real, allocatable :: dtdz(:,:)
         real, allocatable :: rho(:,:)
-
+        real, allocatable :: kbot(:,:)
+        
         ! Axis limits
         real :: ax_min(nax_max)
         real :: ax_max(nax_max)
@@ -199,7 +195,11 @@
 
         ! Histogram
         integer, allocatable :: hist(:,:,:,:)
+        integer, allocatable :: kbot_hist(:,:,:,:)
 
+        ! Filter for reading particles off the bottom
+        integer :: kbot_limit
+        
         ! Avg and var of requested variables
         real, allocatable :: xavg(:,:,:,:), xvar(:,:,:,:)
         real, allocatable :: yavg(:,:,:,:), yvar(:,:,:,:)
@@ -225,6 +225,7 @@
         ld = .false.
         le = .false.
         lf = .false.
+        lg = .false.
         lh = .false.
         li = .false.
         ll = .false.
@@ -277,6 +278,8 @@
         ! index will stay at 1 the whole time.
         ax_ind = 1
 
+        ! Init kbot_limit (will likely include everything by default).
+        kbot_limit = 100
         
         !------Get command line information------
         ! First argument: Name of file to restart.
@@ -356,7 +359,17 @@
                     endif
                     ! ADD MORE VARIABLES HERE FOR GENERALITY!
                  endif
+                 
+              elseif ( index(trim(arg_flag),'-G') .ne. 0 ) then
+                 ! We will create a second kbot filtered hist.
+                 lg = .true.
 
+                 ! Need to read the following integer k-index
+                 call get_command_argument(arg_count, arg_int, arg_len, exitcode)
+                 arg_count = arg_count + 1
+                 call checkexit(exitcode)
+                 read(arg_int,'(i10)') kbot_limit
+                 
               elseif ( index(trim(arg_flag),'-H') .ne. 0 ) then
                  lh = .true.
                  call print_help()
@@ -587,6 +600,12 @@
            salt_hold = 0.0
         endif
 
+        if ( lg ) then
+           ! Need to store the kbot variable
+           allocate(kbot(npts,1))
+           kbot = 0.0
+        endif
+        
         if ( lk ) then
            ! Percentage depth specifed
            ! so need to load layer top
@@ -645,6 +664,9 @@
 
         write(*,*) 'Allocate space for histogram...'
         allocate(hist(nc(1),nc(2),nc(3),nc(4)))
+        if ( lg ) then
+           allocate(kbot_hist(nc(1),nc(2),nc(3),nc(4)))
+        endif
         if (lxo) then
            allocate(xavg(nc(1),nc(2),nc(3),nc(4)))
            allocate(xvar(nc(1),nc(2),nc(3),nc(4)))
@@ -704,7 +726,8 @@
 
         write(*,*) 'Initialize histograms to zero...'
         hist = 0
-
+        if ( lg ) kbot_hist = 0
+        
         ! Use the longest dimension to allocate space
         ! for the center and edge locations arrays.
         allocate(edges(nax,nc_max))
@@ -761,6 +784,10 @@
            endif
         enddo
         hvid = ncvdef(ncoid,hvnam,ncint,nax_max,ax_did,exitcode)
+        if ( lg ) then
+           kvid = ncvdef(ncoid,'khist',ncint,nax_max,ax_did,exitcode)
+        endif
+        
         ! The fill value complicates matters for plotting in
         ! Ferret.  Just remove it here and use ignore0 in
         ! Ferret.
@@ -836,6 +863,12 @@
            lag_readct2d(1) = npts
            lag_readct2d(2) = 1
 
+           ! If we are using -G flag, then always need
+           ! kbot variable for whole trajectory.
+           if ( lg ) then
+              call get_lag_var(ncfid,kbotvnam,kbot(:,1))
+           endif
+           
            ! For each axis (binning dimension), get
            ! the Lagrangian data that correspond to
            ! that data.  The lag_var array is thus
@@ -1015,7 +1048,23 @@
                     ! Add one to the histogram
                     hist(ax_ind(1),ax_ind(2),ax_ind(3),ax_ind(4)) = &
                          hist(ax_ind(1),ax_ind(2),ax_ind(3),ax_ind(4)) + 1
-                      
+
+                    ! If the kbot value is less than or equal to
+                    ! the -G k-index = kbot_limit, also update the
+                    ! kbot_hist.
+                    if ( lg ) then
+                       ! Need to set this aside since kbot is not
+                       ! always allocated.  Potential for slight
+                       ! speed up here to reduce number of if's.
+                       ! Round to nearest integer for kbot to put
+                       ! it in it's proper grid box if not already
+                       ! rounded in packing.
+                       if ( nint(kbot(p,1)) .le. kbot_limit ) then
+                          kbot_hist(ax_ind(1),ax_ind(2),ax_ind(3),ax_ind(4)) = &
+                               kbot_hist(ax_ind(1),ax_ind(2),ax_ind(3),ax_ind(4)) + 1
+                       endif
+                    endif
+                 
                     ! Add one to the total number of valid points
                     nall = nall + 1
  
@@ -1181,6 +1230,9 @@
 
         write(*,*) 'Write histogram to output file...'
         call ncvpt(ncoid,hvid,writstart,writcount,hist,exitcode)
+        if ( lg ) then
+           call ncvpt(ncoid,kvid,writstart,writcount,kbot_hist,exitcode)
+        endif
         if ( lxo ) then
            write(*,*) 'Write avg/var lam to output file...'
            call ncvpt(ncoid,xavid,writstart,writcount,xavg,exitcode)
@@ -1251,7 +1303,7 @@
         write(*,*) '            -I tcdf_input_file.nc'
         write(*,*) '           [-P pts_min pts_max p_skip]'
         write(*,*) '           [-F list_of_vars] [-l]'
-        write(*,*) '           [-O ] [-H ] [-t scale]'
+        write(*,*) '           [-O ] [-H ] [-G k-index] [-t scale]'
         write(*,*) ' '
         write(*,*) '-------------------------------------------'
         write(*,*) ' This program will compute a 2D histogram'
@@ -1294,6 +1346,13 @@
         write(*,*) ' given list of variables.  Also includes'
         write(*,*) ' the variance in addition to average. Ex:'
         write(*,*) ' -F XYZ'
+        write(*,*) ' '
+        write(*,*) ' -G k-index = will create a second hist'
+        write(*,*) '              variable in which only kbot'
+        write(*,*) '              values less than k-index will'
+        write(*,*) '              be used in the binning.  The'
+        write(*,*) '              result will be a map of particles'
+        write(*,*) '              close to the bottom.'
         write(*,*) ' '
         write(*,*) ' -t scale = will divide the time step'
         write(*,*) '            increments by the real number'
