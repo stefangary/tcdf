@@ -33,7 +33,10 @@
 ! always converted.
 !
 ! Added -J flag for
-! storing index values.     
+! storing index values.
+!
+! Added -K flag for for
+! storing k-index values.        
 !----------------------------------------
 
         use params
@@ -52,7 +55,8 @@
         integer :: ncfid, ncoid
         integer :: itrajdid, itimedid
 
-        integer :: ilamvid, iphivid, idepvid, iuvid, jvvid
+        integer :: ilamvid, iphivid, idepvid
+        integer :: iuvid, jvvid, kwvid
         integer :: itempvid, isaltvid
         integer :: olamvid, ophivid, odepvid
 
@@ -95,9 +99,11 @@
         real, allocatable :: osalt(:,:)
         real, allocatable :: oiit(:,:)
         real, allocatable :: ojjt(:,:)
+        real, allocatable :: okkt(:,:)
+        real, allocatable :: kbot(:,:)
         real(kind=8) :: lam_missing(1), phi_missing(1), dep_missing(1)
         real(kind=8) :: temp_missing(1), salt_missing(1)
-        real(kind=8) :: iit_missing(1),jjt_missing(1)
+        real(kind=8) :: iit_missing(1),jjt_missing(1),kkt_missing(1)
 
         ! ARIANE trajectory variables
         ! Note, I changed ARIANE to output files
@@ -132,12 +138,14 @@
 
         ! Flags
         logical :: li, lh, lp, l_help
-        logical :: lm, lq, ls, lt, lj
+        logical :: lm, lq, ls, lt, lj, lk, lll
         logical :: l_verbose
         
         ! Default values for flags
         li = .false.
         lj = .false.
+        lk = .false.
+        lll = .false.
         lh = .false.
         lp = .false.
         lm = .false.
@@ -203,6 +211,12 @@
               elseif ( index(trim(arg_flag),'-J') .ne. 0 ) then
                  ! We will add iit,jjt - grid indeces.
                  lj = .true.
+              elseif ( index(trim(arg_flag),'-K') .ne. 0 ) then
+                 ! We will add kkt - grid indeces.
+                 lk = .true.
+              elseif ( index(trim(arg_flag),'-L') .ne. 0 ) then
+                 ! We will add kbot - grid indeces.
+                 lll = .true.
               elseif ( index(trim(arg_flag),'-H') .ne. 0 ) then
                  ! We will add bottom depth
                  lh = .true.
@@ -253,9 +267,12 @@
         ilamvid = ncvid(ncfid,ilamvnam,exitcode)
         iphivid = ncvid(ncfid,iphivnam,exitcode)
         idepvid = ncvid(ncfid,idepvnam,exitcode)
-        if ( lh .or. lj ) then
+        if ( lh .or. lj .or. lll ) then
            iuvid = ncvid(ncfid,iuvnam,exitcode)
            jvvid = ncvid(ncfid,jvvnam,exitcode)
+        endif
+        if ( lk .or. lll ) then
+           kwvid = ncvid(ncfid,kwvnam,exitcode)
         endif
         if ( lt ) then
            itempvid = ncvid(ncfid,itempvnam,exitcode)
@@ -292,6 +309,12 @@
         if ( lj ) then
            call cre_lag_var(ncoid,iitvnam,lp)
            call cre_lag_var(ncoid,jjtvnam,lp)
+        endif
+        if ( lk ) then
+           call cre_lag_var(ncoid,kktvnam,lp)
+        endif
+        if ( lll ) then
+           call cre_lag_var(ncoid,kbotvnam,lp)
         endif
         if ( lh ) then
            call cre_lag_var(ncoid,bdepvnam,lp)
@@ -341,8 +364,18 @@
            oiit = 0.0
            ojjt = 0.0
         endif
-           
-        if ( lh .or. lj ) then
+
+        if ( lk ) then
+           allocate(okkt(npts,1))
+           okkt = 0.0
+        endif
+
+        if ( lll ) then
+           allocate(kbot(npts,1))
+           kbot = 0.0
+        endif
+        
+        if ( lh .or. lj .or. lll ) then
            ! Input is i,j coordinates along each particle
            allocate(iu(1,npts))
            allocate(jv(1,npts))
@@ -350,14 +383,24 @@
            jv = 0.0
         endif
 
+        if ( lk .or. lll ) then
+           ! Input is k coordinates along each particle
+           allocate(kw(1,npts))
+           kw = 0.0
+        endif
+        
         if ( lh ) then
            ! Output
            allocate(bdep(npts,1))
            bdep = 0.0
+        endif
 
+        if ( lh .or. lll ) then
            ! Load the model grid and build up a bottom depth map
            call load_orca_mesh_mask
+        endif
 
+        if ( lh ) then
            ! Build a bottom depth map, for ORCA,
            ! sum up the partial depths of the cells.
            allocate(bdep_map(imt,jmt))
@@ -415,6 +458,18 @@
            call ncagt(ncfid,isaltvid,'missing_value',salt_missing,exitcode)
            write(*,*) 'Salt missing_value = ',salt_missing(1)
         endif
+        if ( lj .or. lll .or. lh ) then
+           ! Need i,j values from input
+           call ncagt(ncfid,iuvid,'missing_value',iit_missing,exitcode)
+           write(*,*) 'iit missing_value = ',iit_missing(1)
+           call ncagt(ncfid,jvvid,'missing_value',jjt_missing,exitcode)
+           write(*,*) 'jjt missing_value = ',jjt_missing(1)
+        endif
+        if ( lk .or. lll ) then
+           ! Need k values from input
+           call ncagt(ncfid,kwvid,'missing_value',kkt_missing,exitcode)
+           write(*,*) 'kkt missing_value = ',kkt_missing(1)
+        endif
         
         !========Loop over each trajectory from infile==========
         do t = 1,ntraj
@@ -438,12 +493,18 @@
            call ncvgt(ncfid,idepvid,lag_readst2d,lag_readct2d,idep,exitcode)
 
            !------If bottom depth or indeces are called for------
-           if ( lh .or. lj ) then
+           if ( lh .or. lj .or. lll ) then
               ! Read extra variables from infile
               call ncvgt(ncfid,iuvid,lag_readst2d,lag_readct2d,iu,exitcode)
               call ncvgt(ncfid,jvvid,lag_readst2d,lag_readct2d,jv,exitcode)
            endif
 
+           !-----If depth index is called for-------
+           if ( lk .or. lll ) then
+              ! Read extra variables from the infile.
+              call ncvgt(ncfid,kwvid,lag_readst2d,lag_readct2d,kw,exitcode)
+           endif
+           
            !------If temperature is called for------
            if ( lt ) then
               ! Read extra variable from infile
@@ -517,8 +578,39 @@
                  ! Convert from iu,jv grid to t-grid
                  ! Any rounding is taken care of in
                  ! the writing of trajectories.
+                 ! o----------o---------o
+                 ! |          |         |
+                 ! t=1       u=1        t=2
+                 !            |
+                 !           t=1.5
+                 ! Add 0.5 for both since u and v are
+                 ! one half step in positive direction
+                 ! relative to t.
                  oiit(p,1) = iu(1,p)+0.5
                  ojjt(p,1) = jv(1,p)+0.5
+              enddo
+           endif
+
+           ! If depth index is called for,
+           if ( lk ) then
+              do p = 1,npts
+                 ! Convert the kw grid to the
+                 ! t-grid.  Subtract 0.5 because
+                 ! w-grid runs one half step shallower
+                 ! than the t-grid (the w-shift is
+                 ! in the opposite direction of
+                 ! the positive k-direction while the
+                 ! u|v-shift is in the same direction
+                 ! as the i|j-direction).  See the
+                 ! NEMO_book.pdf
+                 ! w=1----o
+                 !        |
+                 ! t=1----o----w=1.5
+                 !        |
+                 ! w=2----o----t=1.5
+                 !        |
+                 ! t=2----o
+                 okkt(p,1) = kw(1,p)-0.5
               enddo
            endif
            
@@ -562,6 +654,42 @@
               enddo
            endif
 
+           ! Make index off the bottom in its own loop to avoid
+           ! multiple if executions.
+           if ( lll ) then
+              do p = 1,npts
+                 ! The t-grid k-index depth of the water at
+                 ! this point is in the kmt variable.
+                 ! Need to shift iU|jV|kW to the T-grid
+                 ! and finally convert to integers.
+                 ! (The shift is the opposite to get_launch_points.sh.)
+                 ! The t-grid node essentially goes from x-0.5
+                 ! to x+0.5, and the rounding of nint will take
+                 ! you to exactly that requirement.
+                 ii = nint(iu(1,p)+0.5)
+                 jj = nint(jv(1,p)+0.5)
+                 kk = nint(kw(1,p)-0.5)
+
+                 ! Sanity check for particles at the boundaries,
+                 ! throw them back onto the edge.
+                 if ( ii .lt. 1 ) ii = 1
+                 if ( ii .gt. imt ) ii = imt
+                 if ( jj .lt. 1 ) jj = 1
+                 if ( jj .gt. jmt ) jj = jmt
+                 if ( kk .lt. 1 ) kk = 1
+                 if ( kk .gt. kmt(ii,jj)) kk = kmt(ii,jj)
+                 
+                 ! Determine number of index boxes off the bottom
+                 ! based on location.  Some examples:
+                 ! If we are in the deepest
+                 ! possible box, kbot = 1 = kmt - kmt + 1
+                 ! If we are in the second deepest possible
+                 ! box (one box up from the bottom),
+                 ! kbot = 2 = kmt - (kmt-1) + 1
+                 kbot(p,1) = kmt(ii,jj) - kk + 1
+              enddo
+           endif
+
            !------Write to output file------
            call put_lag_var(ncoid,lamvnam,olam,npts)
            call put_lag_var(ncoid,phivnam,ophi,npts)
@@ -569,6 +697,12 @@
            if ( lj ) then
               call put_lag_var(ncoid,iitvnam,oiit,npts)
               call put_lag_var(ncoid,jjtvnam,ojjt,npts)
+           endif
+           if ( lk ) then
+              call put_lag_var(ncoid,kktvnam,okkt,npts)
+           endif
+           if ( lll ) then
+              call put_lag_var(ncoid,kbotvnam,kbot,npts)
            endif
            if ( lh ) then
               call put_lag_var(ncoid,bdepvnam,bdep,npts)
@@ -589,8 +723,14 @@
         if ( lj ) then
            deallocate(oiit,ojjt)
         endif
-        if ( lj .or. lh ) then
+        if ( lj .or. lh .or. lll ) then
            deallocate(iu,jv)
+        endif
+        if ( lk .or. lll ) then
+           deallocate(kw,okkt)
+        endif
+        if ( lll ) then
+           deallocate(kbot)
         endif
         if ( lh ) then
            deallocate(bdep)
@@ -628,6 +768,7 @@ subroutine print_help()
   write(*,*) ' -I specifies input.  Output is t.cdf'
   write(*,*) ' -P activates packing of data into short ints'
   write(*,*) ' -H determines bottom depth from traj_iU|jV'
+  write(*,*) '    and from mesh_mask.nc. Data stored in bdep.'
   write(*,*) ' -T loads temperature from traj_temp'
   write(*,*) ' -S loads salinity from traj_salt'
   write(*,*) ' -M checks for missing_values'
@@ -640,7 +781,19 @@ subroutine print_help()
   write(*,*) '    within boxes are lost.  If packing is not'
   write(*,*) '    selected, then they are stored as reals'
   write(*,*) '    with fractional positions within boxes'
-  write(*,*) '    retained.'
+  write(*,*) '    retained.  Note that iU|jV are converted'
+  write(*,*) '    from the U and V grids, respectively to the'
+  write(*,*) '    T-grid for ease of syncing with model grids.'
+  write(*,*) '    The conversion is done by adding 0.5.'
+  write(*,*) ' -K similar to -J, but loads and writes traj_kW'
+  write(*,*) '    vertical index spacing.  Note the output index'
+  write(*,*) '    is converted to the T-grid, not the W-grid (input).'
+  write(*,*) ' -L similar to -K but this index is the number of'
+  write(*,*) '    vertical grid boxes FROM the bottom, not the'
+  write(*,*) '    surface.  This value depends on the actual depth'
+  write(*,*) '    of the particle as well as the bathymetry at each'
+  write(*,*) '    point.  Like -H, uses mesh_mask.nc.  Data stored'
+  write(*,*) '    in kbot variable.'
   write(*,*) ' -h prints this message and quits'
   write(*,*) ' -v verbose mode'
   write(*,*) ' '
