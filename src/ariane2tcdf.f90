@@ -610,7 +610,8 @@
                  ! w=2----o----t=1.5
                  !        |
                  ! t=2----o
-                 okkt(p,1) = kw(1,p)-0.5
+                 ! Also need to change -k (ARIANE standard) to +k
+                 okkt(p,1) = (-1.0*kw(1,p))-0.5
               enddo
            endif
            
@@ -668,7 +669,7 @@
                  ! you to exactly that requirement.
                  ii = nint(iu(1,p)+0.5)
                  jj = nint(jv(1,p)+0.5)
-                 kk = nint(kw(1,p)-0.5)
+                 kk = nint((-1.0*kw(1,p))-0.5)
 
                  ! Sanity check for particles at the boundaries,
                  ! throw them back onto the edge.
@@ -727,7 +728,10 @@
            deallocate(iu,jv)
         endif
         if ( lk .or. lll ) then
-           deallocate(kw,okkt)
+           deallocate(kw)
+        endif
+        if ( lk ) then
+           deallocate(okkt)
         endif
         if ( lll ) then
            deallocate(kbot)
