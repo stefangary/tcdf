@@ -73,6 +73,8 @@
         real, allocatable :: bdep(:)
         real, allocatable :: iit(:)
         real, allocatable :: jjt(:)
+        real, allocatable :: kkt(:)
+        real, allocatable :: kbot(:)
         
         ! Counters
         ! p = points(time), t = traj
@@ -111,6 +113,7 @@
 
         ! Flags for presence of variables on command line.
         logical :: li, lt, ls, lh, lj, lu, lv, lw, lr
+        logical :: lk, lll
         logical :: l_stamp_id, l_verbose
 
         ! Vector of 1,0 to mark presence of traj in
@@ -144,6 +147,8 @@
         ls = .false.
         lh = .false.
         lj = .false.
+        lk = .false.
+        lll = .false.
         lu = .false.
         lv = .false.
         lw = .false.
@@ -255,6 +260,14 @@
               elseif ( index(trim(arg_flag),'-J') .ne. 0 ) then
                  ! Copy iit,jjt
                  lj = .true.
+
+              elseif ( index(trim(arg_flag),'-K') .ne. 0 ) then
+                 ! Copy kkt
+                 lk = .true.
+
+              elseif ( index(trim(arg_flag),'-L') .ne. 0 ) then
+                 ! Copy kbot
+                 lll = .true.
                  
               elseif ( index(trim(arg_flag),'-s') .ne. 0 ) then
                  ! Stamp each traj with ID
@@ -388,6 +401,13 @@
            allocate(iit(npts))
            allocate(jjt(npts))
         endif
+        if (lk) then
+           allocate(kkt(npts))
+        endif
+        if (lll) then
+           allocate(kbot(npts))
+        endif
+        
         ! Specify read vectors
         lag_readst2d(1) = 1
         lag_readct2d(1) = npts
@@ -441,7 +461,15 @@
               if ( l_verbose ) write(*,*) 'Load jjt...'
               call get_lag_var(ncid_i,jjtvnam,jjt)
            endif
-
+           if (lk) then
+              if ( l_verbose ) write(*,*) 'Load kkt...'
+              call get_lag_var(ncid_i,kktvnam,kkt)
+           endif
+           if (lll) then
+              if ( l_verbose ) write(*,*) 'Load kbot...'
+              call get_lag_var(ncid_i,kbotvnam,kbot)
+           endif
+           
            !--------------------------------------------------------
            ! Check for whether to open a new file or not.
            if ( (current_number_output_file .eq. 0) .or. &
@@ -510,7 +538,14 @@
                    call dup_lag_var(ncid_i,ncid_y,jjtvnam)
                    if ( l_verbose ) write(*,*) 'Created j-index position variable.'
                 endif
-                
+                if (lk) then
+                   call dup_lag_var(ncid_i,ncid_y,kktvnam)
+                   if ( l_verbose ) write(*,*) 'Created k-index position variable.'
+                endif
+                if (lll) then
+                   call dup_lag_var(ncid_i,ncid_y,kbotvnam)
+                   if ( l_verbose ) write(*,*) 'Created kbot variable.'
+                endif
                 if ( l_verbose ) write(*,*) 'Done creating file...'
                 call ncendf(ncid_y,exitcode)
 
@@ -538,6 +573,12 @@
              if (lj) then
                 call put_lag_var(ncid_y,iitvnam,iit,npts)
                 call put_lag_var(ncid_y,jjtvnam,jjt,npts)
+             endif
+             if (lk) then
+                call put_lag_var(ncid_y,kktvnam,kkt,npts)
+             endif
+             if (lll) then
+                call put_lag_var(ncid_y,kbotvnam,kbot,npts)
              endif
           enddo   ! End of looping over traj points
 
@@ -573,7 +614,7 @@
         write(*,*) '-------------------------------------------'
         write(*,*) ' tcdfsplit <-N <N> | -F <splitfile> > -I infile.nc'
         write(*,*) '          [-s] [-v] [-h] [-T] [-S] [-H] [-J]'
-        write(*,*) ' '
+        write(*,*) '          [-K] [-L]'
         write(*,*) '-------------------------------------------'
         write(*,*) 'This program will split a big traj ensemble'
         write(*,*) 'specified by the -I flag into:'
@@ -608,6 +649,8 @@
         write(*,*) ' -H = copy trajectory bottom depth (bdep)'
         write(*,*) ' -J = copy trajectory i and j index locations'
         write(*,*) '      on the original model grid (iit,jjt)'
+        write(*,*) ' -K = copy trajectory k index locations (kkt).'
+        write(*,*) ' -L = copy trajectory kbot variable.'
         write(*,*) '--------------------------------------------------'
 
         return
