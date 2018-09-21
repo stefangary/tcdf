@@ -77,11 +77,12 @@
         character(len=4) :: id_vnam = 'id  '
         character(len=4) :: rldvnam = 'rld '
         character(len=4) :: bdepvnam = 'bdep'
-        ! iit and jjt are decimal index values for
-        ! location of particle in i,j T-grid.  One
-        ! could add an analogous kkt as well.
+        ! iit, jjt, kkt are decimal index values for
+        ! location of particle in i,j,k T-grid.
         character(len=4) :: iitvnam = 'iit '
         character(len=4) :: jjtvnam = 'jjt '
+        character(len=4) :: kktvnam = 'kkt '
+        character(len=4) :: kbotvnam = 'kbot'
         
         ! Layer names are set to defaults here.
         ! Can have multiple layer names in one
@@ -135,8 +136,10 @@
         real, parameter :: rld_mask = -9.0
         real, parameter :: lay_mask = -9.0
         real, parameter :: bdep_mask = -9.0
+        real, parameter :: kbot_mask = -9
         real, parameter :: iit_mask = -9
         real, parameter :: jjt_mask = -9
+        real, parameter :: kkt_mask = -9
         
         ! Variable default values (when
         ! initialized, to allow for never
@@ -162,8 +165,10 @@
         real, parameter :: layer_bot_def = 0.0
         real, parameter :: rld_def = 0.0
         real, parameter :: bdep_def = 0.0
+        real, parameter :: kbot_def = 0
         real, parameter :: iit_def = 0
         real, parameter :: jjt_def = 0
+        real, parameter :: kkt_def = 0
         
         ! Variable default ranges (values
         ! that the _1 and _2 values are
@@ -211,10 +216,14 @@
         real, parameter :: rld_max = 1.0
         real, parameter :: bdep_min = -1.0
         real, parameter :: bdep_max = 9000.0
+        real, parameter :: kbot_min = 0
+        real, parameter :: kbot_max = 9000
         real, parameter :: iit_min = 0
         real, parameter :: iit_max = 9000
         real, parameter :: jjt_min = 0
         real, parameter :: jjt_max = 9000
+        real, parameter :: kkt_min = 0
+        real, parameter :: kkt_max = 9000
         
       end module tcdfio
 
@@ -306,7 +315,7 @@
 
           elseif ( vtype .eq. ncshort ) then
              ! Data are unpacked integers, convert to real
-             ! This is reserved for iit,jjt.
+             ! This is reserved for iit,jjt,kkt,kbot.
              allocate(short_array(npts))
              call ncvgt(fid,vid,lag_readst2d,lag_readct2d,short_array,exitcode)
              do o = 1,npts
@@ -433,7 +442,7 @@
              deallocate(byte_array)
 
           elseif ( vtype .eq. ncshort ) then
-             ! Data are iit,jjt
+             ! Data are iit,jjt,kkt,kbot
              allocate(short_array(pc))
              call ncvgt(fid,vid,local_readst,local_readct,short_array,exitcode)
              do o = 1,pc
@@ -547,10 +556,16 @@
              deallocate(byte_array)
 
           elseif ( vtype .eq. ncshort ) then
-             ! Data are iit,jjt
+             ! Data are iit,jjt,kkt,kbot
              allocate(short_array(np))
              do o = 1,np
-                short_array(o) = int(ri(o),2)
+                ! Note that for index values we use nint to
+                ! round to the nearest integer because that
+                ! will place particles within their respective
+                ! grid boxes.  In the other data, e.g. x,y,z,t,s
+                ! we are truncating extra digits after dividing
+                ! by the scale factor, so int is more appropriate.
+                short_array(o) = nint(ri(o),2)
              enddo
              call ncvpt(fid,vid,lag_writest2d,lag_writect2d,short_array,exitcode)
              deallocate(short_array)
@@ -676,7 +691,7 @@
              deallocate(byte_array)
 
           elseif ( vtype .eq. ncshort ) then
-             ! Data are iit,jjt
+             ! Data are iit,jjt,kkt,kbot
              allocate(short_array(pc))
              do o = 1,pc
                 short_array(o) = int(ri(o),2)
@@ -914,7 +929,7 @@
              deallocate(byte_array)
 
           elseif ( vtype .eq. ncshort ) then
-             ! Data are iit,jjt
+             ! Data are iit,jjt,kkt,kbot
              allocate(short_array(len_seg))
              do o = 1,len_seg
                 oo = lo + o - 1
@@ -1112,7 +1127,7 @@
              deallocate(byte_array)
 
           elseif ( vtype .eq. ncshort ) then
-             ! Data are iit,jjt
+             ! Data are iit,jjt,kkt,kbot
              allocate(short_array(lag_writect2d(1)))
              short_array = int(mask,2)
              do o = 1,len_seg
@@ -1219,8 +1234,10 @@
           endif
 
        elseif ( (index(trim(vn),trim(iitvnam)) .ne. 0) .or. &
-                (index(trim(vn),trim(jjtvnam)) .ne. 0) ) then
-          ! Longitude or latitude in i,j
+                (index(trim(vn),trim(jjtvnam)) .ne. 0) .or. &
+                (index(trim(vn),trim(kktvnam)) .ne. 0) .or. &
+                (index(trim(vn),trim(kbotvnam)) .ne. 0) ) then
+          ! Longitude or latitude or depth in i,j,k
           if ( lp ) then
              vid = ncvdef(fid1,vn,ncshort,2,vdims_out,exitcode)
              ! No other packing attributes needed.
