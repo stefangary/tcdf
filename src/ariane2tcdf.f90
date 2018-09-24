@@ -586,8 +586,14 @@
                  ! Add 0.5 for both since u and v are
                  ! one half step in positive direction
                  ! relative to t.
-                 oiit(p,1) = iu(1,p)+0.5
-                 ojjt(p,1) = jv(1,p)+0.5
+                 if ( (iu(1,p) .eq. iit_missing(1)) .or. &
+                      (jv(1,p) .eq. jjt_missing(1)) ) then
+                    oiit(p,1) = iit_mask
+                    ojjt(p,1) = jjt_mask
+                 else
+                    oiit(p,1) = iu(1,p)+0.5
+                    ojjt(p,1) = jv(1,p)+0.5
+                 endif
               enddo
            endif
 
@@ -611,7 +617,12 @@
                  !        |
                  ! t=2----o
                  ! Also need to change -k (ARIANE standard) to +k
-                 okkt(p,1) = (-1.0*kw(1,p))-0.5
+                 ! and check for missing values.
+                 if ( kw(1,p) .eq. kkt_missing(1) ) then
+                    okkt(p,1) = kkt_mask
+                 else
+                    okkt(p,1) = (-1.0*kw(1,p))-0.5
+                 endif
               enddo
            endif
            
@@ -640,18 +651,23 @@
                  ! (Alternatively, if you didn't convert from i
                  ! and j grids, then you could just use int because
                  ! they are a half step behind.)
-                 ii = nint(iu(1,p)+0.5)
-                 jj = nint(jv(1,p)+0.5)
+                 if ( (iu(1,p) .eq. iit_missing(1)) .or. &
+                      (jv(1,p) .eq. jjt_missing(1)) ) then
+                    bdep(p,1) = bdep_mask
+                 else
+                    ii = nint(iu(1,p)+0.5)
+                    jj = nint(jv(1,p)+0.5)
 
-                 ! Sanity check for particles at the boundaries,
-                 ! throw them back onto the edge.
-                 if ( ii .lt. 1 ) ii = 1
-                 if ( ii .gt. imt ) ii = imt
-                 if ( jj .lt. 1 ) jj = 1
-                 if ( jj .gt. jmt ) jj = jmt
+                    ! Sanity check for particles at the boundaries,
+                    ! throw them back onto the edge.
+                    if ( ii .lt. 1 ) ii = 1
+                    if ( ii .gt. imt ) ii = imt
+                    if ( jj .lt. 1 ) jj = 1
+                    if ( jj .gt. jmt ) jj = jmt
 
-                 ! Determine bottom depth based on location
-                 bdep(p,1) = bdep_map(ii,jj)
+                    ! Determine bottom depth based on location
+                    bdep(p,1) = bdep_map(ii,jj)
+                 endif
               enddo
            endif
 
@@ -667,27 +683,33 @@
                  ! The t-grid node essentially goes from x-0.5
                  ! to x+0.5, and the rounding of nint will take
                  ! you to exactly that requirement.
-                 ii = nint(iu(1,p)+0.5)
-                 jj = nint(jv(1,p)+0.5)
-                 kk = nint((-1.0*kw(1,p))-0.5)
+                 if ( (iu(1,p) .eq. iit_missing(1)) .or. &
+                      (jv(1,p) .eq. jjt_missing(1)) .or. &
+                      (kw(1,p) .eq. kkt_missing(1)) ) then
+                    kbot(p,1) = kbot_mask
+                 else
+                    ii = nint(iu(1,p)+0.5)
+                    jj = nint(jv(1,p)+0.5)
+                    kk = nint((-1.0*kw(1,p))-0.5)
 
-                 ! Sanity check for particles at the boundaries,
-                 ! throw them back onto the edge.
-                 if ( ii .lt. 1 ) ii = 1
-                 if ( ii .gt. imt ) ii = imt
-                 if ( jj .lt. 1 ) jj = 1
-                 if ( jj .gt. jmt ) jj = jmt
-                 if ( kk .lt. 1 ) kk = 1
-                 if ( kk .gt. kmt(ii,jj)) kk = kmt(ii,jj)
+                    ! Sanity check for particles at the boundaries,
+                    ! throw them back onto the edge.
+                    if ( ii .lt. 1 ) ii = 1
+                    if ( ii .gt. imt ) ii = imt
+                    if ( jj .lt. 1 ) jj = 1
+                    if ( jj .gt. jmt ) jj = jmt
+                    if ( kk .lt. 1 ) kk = 1
+                    if ( kk .gt. kmt(ii,jj)) kk = kmt(ii,jj)
                  
-                 ! Determine number of index boxes off the bottom
-                 ! based on location.  Some examples:
-                 ! If we are in the deepest
-                 ! possible box, kbot = 1 = kmt - kmt + 1
-                 ! If we are in the second deepest possible
-                 ! box (one box up from the bottom),
-                 ! kbot = 2 = kmt - (kmt-1) + 1
-                 kbot(p,1) = kmt(ii,jj) - kk + 1
+                    ! Determine number of index boxes off the bottom
+                    ! based on location.  Some examples:
+                    ! If we are in the deepest
+                    ! possible box, kbot = 1 = kmt - kmt + 1
+                    ! If we are in the second deepest possible
+                    ! box (one box up from the bottom),
+                    ! kbot = 2 = kmt - (kmt-1) + 1
+                    kbot(p,1) = kmt(ii,jj) - kk + 1
+                 endif
               enddo
            endif
 
