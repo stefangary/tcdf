@@ -240,7 +240,7 @@
     ! Although not very elegant, a separate routine for 3D contours
     ! could be made.  3D contour finding will be more expensive
     ! because a 3D search for the highest and next highest probability
-    ! must be done.
+    ! must be done so it is not my priority now.
     
     if ( nc(4) .ne. 1 ) then
        write(*,*) 'ERROR: 4th input dimension must be length 1.'
