@@ -64,13 +64,21 @@ program tcdf_hist_merge
               if ( arg_count .eq. 1 ) then
                  write(*,*) 'Reading first file to init storage and output...'
                  ! WORKING HERE
+                 ! Initialize storage to zeros, see below for why.
               else
                  ! Nothing to be done for all subsequent
                  ! files.
               endif
-              
+
               ! For all input files, add histogram counts
-              ! into the storage histograms.
+              ! into the storage histograms.  Since the first
+              ! file is added to zeros in the storage, this
+              ! means that if only one file is specified as input,
+              ! the output will be the same as the input file.
+              ! While this may not be the most efficient way of
+              ! initializing an aggregation, it works well if
+              ! you are limited on space and can only work with
+              ! a small subset of uncompressed files.
               
            enddo
         elseif ( index(trim(arg_flag),'-h') .ne. 0 ) then
