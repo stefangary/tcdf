@@ -15,7 +15,7 @@ program tcdf_hist_merge
 
   ! Command line args, File names.
   integer :: num_command_arg
-  integer :: arg_len, arg_count
+  integer :: arg_len, arg_count, file_count
   character(len=50) :: arg_string
   character(len=10) :: arg_int
   character(len=5) :: arg_flag
@@ -75,6 +75,7 @@ program tcdf_hist_merge
      stop
   else
      arg_count = 1
+     file_count = 1
 
      ! Loop through all the command line flags.
      do
@@ -109,7 +110,7 @@ program tcdf_hist_merge
               ! For the first file, allocate space for
               ! the storage variables and also create
               ! the output file.
-              if ( arg_count .eq. 1 ) then
+              if ( file_count .eq. 1 ) then
                  if ( l_verbose ) write(*,*) 'Reading first file to init storage and output...'
 
                  ! Get variable dimensions
@@ -148,6 +149,12 @@ program tcdf_hist_merge
                     khist_out = 0.0
                     khist_add = 0.0
                  endif
+
+                 if ( l_verbose ) write(*,*) 'Read dimension variables...'
+                 do ii = 1,nax_max
+                    d_vid = ncvid(hist_fid,trim(dnam(ii)),exitcode)
+                    call ncvgt(hist_fid,d_vid,1,nc(ii),dim_var_val(ii,1:nc(ii)),exitcode)
+                 enddo
               else
                  ! No set up to be done for other input files.
               endif
@@ -167,6 +174,7 @@ program tcdf_hist_merge
               ! a small subset of uncompressed files.
 
               ! Add hist_add to hist_out
+              if ( l_verbose ) write(*,*) 'Adding hists...'
               hist_out = hist_out + hist_add
 
               ! For the case where there is a khist, we also
@@ -181,12 +189,16 @@ program tcdf_hist_merge
                  call ncvgt(hist_fid,hist_vid,readst4d,readct4d,hist_add,exitcode)
 
                  ! Add khist_add to khist_out
+                 if ( l_verbose ) write(*,*) 'Adding KHISTS...'
                  khist_out = khist_out + khist_add
                  
               endif
 
               ! Close current input file.
               call ncclos(hist_fid,exitcode)
+
+              ! Move to the next file
+              file_count = file_count + 1
               
            enddo
         elseif ( index(trim(arg_flag),'-h') .ne. 0 ) then
@@ -228,6 +240,14 @@ program tcdf_hist_merge
      
      ! Create dimension variables
      dim_var_id(ii) = ncvdef(hist_fid,dnam(ii),ncfloat,1,vdims4d(ii),exitcode)
+     if ( index(trim(dnam(ii)),'dep') .ne. 0 ) then
+        ! Axis is positive down
+        call ncaptc(hist_fid,dim_var_id(ii),'positive',ncchar,4,'down',exitcode)
+     endif
+     if ( index(trim(dnam(ii)),'rho') .ne. 0 ) then
+        ! Axis is positive down
+        call ncaptc(hist_fid,dim_var_id(ii),'positive',ncchar,4,'down',exitcode)
+     endif
   enddo
        
   ! Create hist variable
@@ -252,8 +272,13 @@ program tcdf_hist_merge
           dim_var_val(ii,writest1d(1):writect1d(1)),exitcode)
   enddo
 
-  if ( l_verbose ) write(*,*) 'Writing histograms to output file...'
+  if ( l_verbose ) write(*,*) 'Writing histogram to output file...'
+  call ncvpt(hist_fid,hist_vid,writest4d,writect4d,hist_out,exitcode)
 
+  if ( lk ) then
+     if ( l_verbose ) write(*,*) 'Writing KHIST to output file...'
+     call ncvpt(hist_fid,khist_vid,writest4d,writect4d,khist_out,exitcode)
+  endif
 
   if ( l_verbose ) write(*,*) 'Closing output file...'
   call ncclos(hist_fid,exitcode)
