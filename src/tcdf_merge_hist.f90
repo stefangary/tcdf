@@ -186,7 +186,7 @@ program tcdf_hist_merge
 
                  ! Get histogram to add to the output
                  if ( l_verbose ) write(*,*) 'Loading KHIST histogram...'
-                 call ncvgt(hist_fid,hist_vid,readst4d,readct4d,hist_add,exitcode)
+                 call ncvgt(hist_fid,hist_vid,readst4d,readct4d,khist_add,exitcode)
 
                  ! Add khist_add to khist_out
                  if ( l_verbose ) write(*,*) 'Adding KHISTS...'
