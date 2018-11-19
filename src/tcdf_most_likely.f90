@@ -9,7 +9,8 @@
 
     use basicfun
     use netcdfio
-
+    use params
+    
     implicit none
 
     ! Command line args, File names.
@@ -21,7 +22,7 @@
     character(len=10) :: arg_real
 
     ! Flags for presence of variables on command line.
-    logical :: lp, li, l_verbose, lx
+    logical :: lp, li, l_verbose, lx, ls
 
     ! Probability contour level
     real :: prob_contour = 0.95
@@ -34,6 +35,7 @@
 
     integer :: hist_vid
     integer :: mask_vid
+    integer :: asum_vid
     integer :: i_vid
     integer :: j_vid
     integer :: d_vid
@@ -58,6 +60,10 @@
     integer :: mindex(2)
 
     ! Data holders
+    real :: er2
+    real, allocatable :: area(:,:)
+    real, allocatable :: dx(:),dy(:)
+    real, allocatable :: asum(:)
     integer, allocatable :: hist(:,:,:,:)
     integer, allocatable :: mask(:,:,:,:)
     logical, allocatable :: hist_mask(:,:)
@@ -82,13 +88,14 @@
     li = .false.
     l_verbose = .false.
     lx = .false.
+    ls = .false.
     nc = 0
     nc_max = 0
     
     !------Get command line information------
     ! Arguments can vary in order
     num_command_arg = command_argument_count()
-       
+
     if(num_command_arg .lt. 2) then
        write(*,*) ' Error: Too few command line arguments.'
        call print_help()
@@ -126,6 +133,10 @@
              ! xyz output
              lx = .true.
 
+          elseif ( index(trim(arg_flag),'-S') .ne. 0 ) then
+             ! area sum/timeseries output
+             ls = .true.
+             
           elseif ( index(trim(arg_flag),'-h') .ne. 0 ) then
              ! print help and exit
              call print_help()
@@ -270,6 +281,52 @@
        d_vid = ncvid(hist_fid,trim(dnam(ii)),exitcode)
        call ncvgt(hist_fid,d_vid,1,nc(ii),dim_var_val(ii,1:nc(ii)),exitcode)
     enddo
+
+    if ( ls ) then
+       if ( l_verbose ) write(*,*) 'Build area map for given lon/lat...'
+       ! Assign incremental area on edges same
+       ! Find dx, dy
+       ! x's are bin centers
+       ! |'s are bin edges
+       ! We have the centers, we want the bin widths.
+       !        | x | x | x | x |
+       er2 = er*er
+       allocate(dx(nc(1)))
+       allocate(dy(nc(2)))
+       allocate(area(nc(1),nc(2)))
+       allocate(asum(nc(3)))
+       do ii = 1,(nc(1)-1)
+          dx(ii) = dim_var_val(1,ii+1)-dim_var_val(1,ii)
+       enddo
+       dx(nc(1)) = dx(nc(1)-1)
+
+       ! Preconvert to rad, mult by radii
+       dx = dx*d2r*er2
+       
+       do ii = 1,(nc(2)-1)
+          dy(ii) = dim_var_val(2,ii+1)-dim_var_val(2,ii)
+       enddo
+       dy(nc(2)) = dy(nc(2)-1)
+
+       ! Preconvert to rad
+       dy = dy*d2r
+       
+       ! Convert degrees to radians and multiply by effective
+       ! radius to get meters on surface of earth and then
+       ! area in m^2.
+       do jj = 1,nc(2)
+          do ii = 1,nc(1)
+             ! Need to account for the cosine of latitude for
+             ! degrees to meters conversion for dx.
+             ! Radius relative to pole at given latitude
+             ! is Earth_radius*cos(lat) - 1 at equator and
+             ! 0 at the poles.
+             ! No change in dy degrees to m conversion.
+             ! Note that we multiply the radii above.
+             area(ii,jj) = dx(ii)*cos(dy(jj))*dy(jj)
+          enddo
+       enddo
+    endif
     
     if ( lx ) then
        ! No need to create netcdf output file
@@ -291,6 +348,11 @@
        ! Create mask variable
        if ( l_verbose ) write(*,*) 'Create output mask variable...'
        mask_vid = ncvdef(mask_fid,'mask',ncint,4,vdims4d,exitcode)
+
+       if ( ls ) then
+          ! Create a variable to store the area sum time series
+          asum_vid = ncvdef(mask_fid,'asum',ncfloat,1,vdims4d(3),exitcode)
+       endif
        
        ! Exit define mode
        if ( l_verbose ) write(*,*) 'Exit define mode...'
@@ -315,6 +377,8 @@
     ! Set mask all to zeros.
     mask = 0
 
+    if (ls) asum = 0
+    
     ! Determine the maximum number of iterations (picks
     ! every box)
     max_iterations = nc(1)*nc(2)
@@ -414,6 +478,14 @@
           if ( l_verbose ) write(*,*) 'Mask number ',ll,' after ',ii,' iterations.'
        endif
     enddo
+
+    if ( ls ) then
+       ! Compute the area sum over the valid boxes
+       do ll = 1,nc(3)
+          asum(ll) = sum(mask(:,:,ll,1)*area(:,:))
+       enddo
+    endif
+
     
     !=======================================================
     ! WRITE OUTPUT
@@ -430,6 +502,10 @@
        enddo
     else
        call ncvpt(mask_fid,mask_vid,writest4d,writect4d,mask,exitcode)
+       if ( ls ) then
+          ! Write area sum time series
+          call ncvpt(mask_fid,asum_vid,1,nc(3),asum,exitcode)
+       endif
        call ncclos(mask_fid,exitcode)
     endif
 
@@ -477,7 +553,9 @@
     write(*,*) ' -X = output in .xyz in stead of .nc'
     write(*,*) ' '
     write(*,*) ' -S = sum the area of the points within'
-    write(*,*) '      the 95% confidence contour'
+    write(*,*) '      the 95% confidence contour.  If'
+    write(*,*) '      there are muliple time steps, then'
+    write(*,*) '      a time series will be generated.'
     write(*,*) ' '
     write(*,*) ' NOTE: This routine can accept the now'
     write(*,*) ' standard 4D output of tcdfhist but it'
