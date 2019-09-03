@@ -22,7 +22,7 @@
     character(len=10) :: arg_real
 
     ! Flags for presence of variables on command line.
-    logical :: lp, li, l_verbose, lx, ls
+    logical :: lp, li, l_verbose, lx, ls, lf
 
     ! Probability contour level
     real :: prob_contour = 0.95
@@ -80,17 +80,18 @@
     real(kind=8) :: total_prob
     real(kind=8) :: delta_prob
 
-    !-----------------------------------------
-    write(*,*) ' Starting tcdf_most_likely...'
-
     ! Initialize flags
     lp = .false.
     li = .false.
     l_verbose = .false.
     lx = .false.
     ls = .false.
+    lf = .false.
     nc = 0
     nc_max = 0
+    
+    !-----------------------------------------
+    if ( l_verbose ) write(*,*) ' Starting tcdf_most_likely...'
     
     !------Get command line information------
     ! Arguments can vary in order
@@ -123,7 +124,7 @@
              call checkexit(exitcode)
              arg_count = arg_count + 1
              read(arg_real,'(f10.4)') prob_contour
-             write(*,*) 'Will search for ',prob_contour,' most likely contour.'
+             if ( l_verbose ) write(*,*) 'Will search for ',prob_contour,' most likely contour.'
               
           elseif ( index(trim(arg_flag),'-v') .ne. 0 ) then
              ! Verbose mode
@@ -136,6 +137,10 @@
           elseif ( index(trim(arg_flag),'-S') .ne. 0 ) then
              ! area sum/timeseries output
              ls = .true.
+
+          elseif ( index(trim(arg_flag),'-F') .ne. 0 ) then
+             ! area sum output, no time series.
+             lf = .true.
              
           elseif ( index(trim(arg_flag),'-h') .ne. 0 ) then
              ! print help and exit
@@ -151,7 +156,7 @@
              call checkexit(exitcode)
 
              ! Test validity of input file name by opening input file.
-             write(*,*) 'Open input netcdf file...'
+             if ( l_verbose ) write(*,*) 'Open input netcdf file...'
              hist_fid = ncopn(trim(arg_string),ncnowrit,exitcode)
 
           else
@@ -173,6 +178,11 @@
        stop
     endif
 
+    if ( ls .and. lf ) then
+       write(*,*) 'ERROR: cannot have both -S and -F.'
+       stop
+    endif
+    
     if ( l_verbose ) then
        write(*,*) 'Will search for ',prob_contour,' contour'
     endif
@@ -282,7 +292,7 @@
        call ncvgt(hist_fid,d_vid,1,nc(ii),dim_var_val(ii,1:nc(ii)),exitcode)
     enddo
 
-    if ( ls ) then
+    if ( ls .or. lf ) then
        if ( l_verbose ) write(*,*) 'Build area map for given lon/lat...'
        ! Assign incremental area on edges same
        ! Find dx, dy
@@ -294,7 +304,8 @@
        allocate(dx(nc(1)))
        allocate(dy(nc(2)))
        allocate(area(nc(1),nc(2)))
-       allocate(asum(nc(3)))
+       if ( ls ) allocate(asum(nc(3)))
+       if ( lf ) allocate(asum(1))
        do ii = 1,(nc(1)-1)
           dx(ii) = dim_var_val(1,ii+1)-dim_var_val(1,ii)
        enddo
@@ -328,7 +339,7 @@
        enddo
     endif
     
-    if ( lx ) then
+    if ( lx .or. lf ) then
        ! No need to create netcdf output file
     else
        ! Create output file
@@ -377,7 +388,19 @@
     ! Set mask all to zeros.
     mask = 0
 
-    if (ls) asum = 0
+    if ( ls .or. lf ) asum = 0
+
+    if ( lf ) then
+       ! Here we collapse the histogram along the third
+       ! dimension.  We also reset nc(3) to 1 so that
+       ! we only compute the contour over the first
+       ! layer in the thrid dimension which is where
+       ! we collapsed everything to.
+       do ll = 2,nc(3)
+          hist(:,:,1,1) = hist(:,:,1,1) + hist(:,:,ll,1)
+       enddo
+       nc(3) = 1
+    endif
     
     ! Determine the maximum number of iterations (picks
     ! every box)
@@ -479,7 +502,7 @@
        endif
     enddo
 
-    if ( ls ) then
+    if ( ls .or. lf ) then
        ! Compute the area sum over the valid boxes
        do ll = 1,nc(3)
           asum(ll) = sum(mask(:,:,ll,1)*area(:,:))
@@ -500,6 +523,9 @@
              write(xyz_fid,'(f20.10,x,f20.10,x,i1)') dim_var_val(1,ii),dim_var_val(2,jj),mask(ii,jj,1,1)
           enddo
        enddo
+    elseif ( lf ) then
+       ! Write single numerical value to standard output
+       write(*,*) asum(1)
     else
        call ncvpt(mask_fid,mask_vid,writest4d,writect4d,mask,exitcode)
        if ( ls ) then
@@ -520,7 +546,7 @@
     deallocate(mask)
     deallocate(hist_mask)
 
-    write(*,*) 'tcdf_most_likely done.'
+    if ( l_verbose ) write(*,*) 'tcdf_most_likely done.'
 
 !=======================================
   end program tcdf_most_likely
@@ -556,6 +582,11 @@
     write(*,*) '      the 95% confidence contour.  If'
     write(*,*) '      there are muliple time steps, then'
     write(*,*) '      a time series will be generated.'
+    write(*,*) ' '
+    write(*,*) ' -F = force a sum of all the levels in the'
+    write(*,*) '      3rd dimension and report just the area'
+    write(*,*) '      of that summed value.  Like -S, but'
+    write(*,*) '      no time series and writes to STDOUT only.'
     write(*,*) ' '
     write(*,*) ' NOTE: This routine can accept the now'
     write(*,*) ' standard 4D output of tcdfhist but it'
