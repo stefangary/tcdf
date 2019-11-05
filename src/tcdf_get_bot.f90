@@ -407,6 +407,28 @@
            enddo
         enddo
 
+        ! Zero out the boundaries to enforce a ring of zeros
+        ! on the outside.
+        do j = 1,nc(2)
+           i = 1
+           bavg(i,j) = 0.0
+           bvar(i,j) = 0.0
+
+           i = nc(1)
+           bavg(i,j) = 0.0
+           bvar(i,j) = 0.0
+        enddo
+
+        do i = 1,nc(1)
+           j = 1
+           bavg(i,j) = 0.0
+           bvar(i,j) = 0.0
+           
+           j = nc(2)
+           bavg(i,j) = 0.0
+           bvar(i,j) = 0.0
+        enddo
+        
         write(*,*) 'Write bathymetry to output file...'
         call ncvpt(ncoid,bavid,writstart,writcount,bavg,exitcode)
         call ncvpt(ncoid,bvvid,writstart,writcount,bvar,exitcode)
