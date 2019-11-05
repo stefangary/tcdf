@@ -171,13 +171,9 @@
 #endif
 
 #ifdef viking20_full
-        ! These are for the VIKING20 cut domain.
+        ! These are for the full VIKING20 domain.
         integer, parameter :: imt = 1784  ! longitude
         integer, parameter :: jmt = 1719  ! latitude
-
-        ! SPG-STG compromise domain
-        !integer, parameter :: imt = 1502  ! longitude
-        !integer, parameter :: jmt = 1050  ! latitude
         integer, parameter :: km = 46    ! depth
 #endif
 
@@ -1859,7 +1855,7 @@
 
           ! Local holder value due to input format
           ! of ORCA grid variables.  NOTE: some
-          ! varaibles are integers or double precision.
+          ! variables are integers or double precision.
           
           ! For masks - no automation
           integer(kind=1), allocatable :: ihold4d(:,:,:,:)
