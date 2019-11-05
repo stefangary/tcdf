@@ -351,44 +351,57 @@
         ! Initialize valid point counter
         nin = 0
         nout = 0
-        
+
+        ! We do not loop over point on the very
+        ! outside edge of the input domain due to
+        ! edge effects.
         do j = 1,jmt
            do i = 1,imt
-
-              write(*,*) 'Working on ',i,j
-              
-              nax_pt_found = 0
-              do k = 1,nax
-                 if ( index(trim(ax_vnam(k)),trim(lamvnam)).ne.0) then
-                    ! Longitude
-                    ax_ind(k) = binsearch(edges(k,:),real(xt(i,j)),1,ne(k))
-                 elseif ( index(trim(ax_vnam(k)),trim(phivnam)).ne.0) then
-                    ! Latitude
-                    ax_ind(k) = binsearch(edges(k,:),real(yt(i,j)),1,ne(k))
-                 else
-                    write(*,*) 'ERROR: Unknown axis type!'
-                 endif
-                    
-                 if (ax_ind(k).gt.0) nax_pt_found = nax_pt_found + 1
-              enddo
-              
-              ! Check point was found
-              if (nax_pt_found .eq. nax ) then
-                 nin = nin + 1
- 
-                 ! Push the stack for the running mean and
-                 ! variance of requested properties at this
-                 ! location.
-                 call olavgvar(bdep(i,j),bcnt(ax_ind(1),ax_ind(2)),&
-                                         bavg(ax_ind(1),ax_ind(2)),&
-                                         bvar(ax_ind(1),ax_ind(2)))
-
-              else
-                 ! This point is not in domain and
-                 ! not sorted
+              if ( (kmt(i,j).eq.0).or.&
+                   (j.eq.1).or.&
+                   (i.eq.1).or.&
+                   (j.eq.jmt).or.&
+                   (i.eq.imt) ) then
+                 ! Skip this point
                  nout = nout + 1
+              else
+                 ! Use this point
+                 
+                 write(*,*) 'Working on ',i,j
+              
+                 nax_pt_found = 0
+                 do k = 1,nax
+                    if ( index(trim(ax_vnam(k)),trim(lamvnam)).ne.0) then
+                       ! Longitude
+                       ax_ind(k) = binsearch(edges(k,:),real(xt(i,j)),1,ne(k))
+                    elseif ( index(trim(ax_vnam(k)),trim(phivnam)).ne.0) then
+                       ! Latitude
+                       ax_ind(k) = binsearch(edges(k,:),real(yt(i,j)),1,ne(k))
+                    else
+                       write(*,*) 'ERROR: Unknown axis type!'
+                    endif
+                    
+                    if (ax_ind(k).gt.0) nax_pt_found = nax_pt_found + 1
+                 enddo
+              
+                 ! Check point was found
+                 if (nax_pt_found .eq. nax ) then
+                    nin = nin + 1
+ 
+                    ! Push the stack for the running mean and
+                    ! variance of requested properties at this
+                    ! location.
+                    call olavgvar(bdep(i,j),bcnt(ax_ind(1),ax_ind(2)),&
+                         bavg(ax_ind(1),ax_ind(2)),&
+                         bvar(ax_ind(1),ax_ind(2)))
 
-              endif   !---End of point found check---
+                 else
+                    ! This point is not in domain and
+                    ! not sorted
+                    nout = nout + 1
+
+                 endif   !---End of point found check---
+              endif   !---End of kmt grid point check---
            enddo   !---End of looping over i points---
         enddo   !---End of looping over j points---
 
