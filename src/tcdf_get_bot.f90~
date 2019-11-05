@@ -1,0 +1,456 @@
+! This software is distributed under the
+! terms of the GNU General Public License
+! v3 or any later version.
+! Copyright Stefan Gary, 2019.
+!----------------------------------------
+
+      program tcdf_get_bot
+
+!----------------------------------------
+! This program will load a native model
+! bathymetry grid and compute the mean
+! depth of all native model points contained
+! in each grid box as defined in the same
+! way as tcdfhist.f90.
+!----------------------------------------
+
+        use netcdfio
+        use grids
+        use basicfun
+        use tcdfio
+        use params
+        use load_data
+        
+        implicit none
+
+        !----Dimension, variable names-----
+
+        ! Output CDF file
+        integer :: ncoid
+
+        ! Default output variable name and filename.
+        character(len=4) :: bvnam = "bott"
+        character(len=7) :: bfnam = "bott.nc"
+        
+        ! Output file is just a map
+        ! of the domain, 2D only.
+        integer, parameter :: nax_max = 2
+        
+        integer :: writstart(nax_max)
+        integer :: writcount(nax_max)
+        integer :: ax_did(nax_max)
+        integer :: ax_vid(nax_max)
+        character(len=4) :: ax_vnam(nax_max)
+
+        ! Variable ID's
+        integer :: bavid, bvvid
+
+        ! Counters
+        ! i = axis1, j = axis2, k = axis3
+        ! p = points
+        integer :: i, j, k, p, nout, nax_pt_found
+
+        ! Axis limits
+        real :: ax_min(nax_max)
+        real :: ax_max(nax_max)
+        real :: ax_del(nax_max)
+        integer :: ax_ind(nax_max)
+
+        ! Command line args, File names.
+        integer :: num_command_arg
+        integer :: arg_len, arg_count
+        character(len=50) :: arg_string
+        character(len=10) :: arg_int
+        character(len=5) :: arg_flag
+        character(len=10) :: arg_real
+
+        ! Flags for keeping track of command
+        ! line options
+        logical :: lu, lv, lf, lx, ly
+        
+        ! Numbers of histoboxes
+        ! (to be calculated from the
+        ! domain values specified above)
+        integer :: ne(nax_max)
+        integer :: nc(nax_max)
+        integer :: nax
+        integer :: nc_max
+
+        ! Histobox edges (axis,length)
+        real, allocatable :: edges(:,:)
+
+        ! Histobox centers (axis,length)
+        real, allocatable :: centers(:,:)
+
+        ! Avg and var of requested variables
+        real, allocatable :: bavg(:,:), bvar(:,:)
+        integer, allocatable :: bcnt(:,:)
+
+        real, allocatable :: bdep(:,:)
+        
+        !------Read command line------
+
+        ! Initialize the flags
+        lu = .false.
+        lv = .false.
+        lf = .false.
+
+        ! Initialize number of axis counter
+        nax = 0
+
+        ! Initialize the axis names and sizes to defaults
+        ! if the number of requested axes is less than the
+        ! total available axes (4).
+        writstart = 1 
+        writcount = 1
+        ax_vnam(1) = 'xxx1'
+        ax_vnam(2) = 'xxx2'
+        
+        ! Axis limits
+        ax_min = 0.0
+        ax_max = 0.0
+        ax_del = 0.0
+        ! Note that for axes that are not used, this
+        ! index will stay at 1 the whole time.
+        ax_ind = 1
+
+        !------Get command line information------
+        ! First argument: Name of file to restart.
+        num_command_arg = command_argument_count()
+       
+        if(num_command_arg .lt. 6) then
+           write(*,*) ' Error: Must specify at least 1 axis and 1 input file!'
+           call print_help()
+           stop
+        else
+
+           arg_count = 1
+
+           ! Loop through all the command line flags
+           do
+
+              ! Test that we are still reading all the flags.
+              if ( arg_count .gt. num_command_arg ) exit
+
+              call get_command_argument(arg_count, arg_flag, arg_len, exitcode)
+              call checkexit(exitcode)
+              arg_count = arg_count + 1
+              
+              !==============NON-AXIS COMMAND LINE FLAGS=================
+
+              if ( index(trim(arg_flag),'-U') .ne. 0 ) then
+                 ! Include u-grid bottom
+                 lu = .true.
+                 bvnam = 'botu'
+                 bfnam = 'botu.nc'
+                 write(*,*) 'WARNING: -U NOT IMPLEMENTED YET!'
+
+              elseif ( index(trim(arg_flag),'-V') .ne. 0 ) then
+                 ! Include v-grid bottom
+                 lv = .true.
+                 bvnam = 'botv'
+                 bfnam = 'botv.nc'
+                 write(*,*) 'WARNING: -V NOT IMPLEMENTED YET!'
+
+              elseif ( index(trim(arg_flag),'-F') .ne. 0 ) then
+                 ! Include f-grid bottom
+                 lf = .true.
+                 bvnam = 'botf'
+                 bfnam = 'botf.nc'
+                 write(*,*) 'WARNING: -F NOT IMPLEMENTED YET!'
+
+              else
+
+                 !=============AXIS DEFINING COMMAND LINE FLAGS=============
+
+                 ! Axis detected, so augment number of axes.
+                 nax = nax + 1
+
+                 ! Check that number of axes is ok
+                 if (nax .gt. nax_max) then
+                    write(*,*) 'ERROR: More than ',nax_max,' axes are specified!'
+                    stop
+                 endif
+
+                 if ( index(trim(arg_flag),'-X') .ne. 0 ) then
+                    lx = .true.
+                    ax_vnam(nax) = lamvnam
+
+                 elseif ( index(trim(arg_flag),'-Y') .ne. 0 ) then
+                    ly = .true.
+                    ax_vnam(nax) = phivnam
+
+                 else
+                    write(*,*) 'ERROR: Unrecognized axis type! ',arg_flag
+                    stop
+                 endif
+                    
+                 ! All valid axes require min, max, and delta values.
+                 call get_command_argument(arg_count, arg_real, arg_len, exitcode)
+                 arg_count = arg_count + 1
+                 call checkexit(exitcode)
+                 read(arg_real,'(f10.4)') ax_min(nax)
+
+                 call get_command_argument(arg_count, arg_real, arg_len, exitcode)
+                 arg_count = arg_count + 1
+                 call checkexit(exitcode)
+                 read(arg_real,'(f10.4)') ax_max(nax)
+                 
+                 call check_limits(ax_min(nax),ax_max(nax))
+
+                 call get_command_argument(arg_count, arg_real, arg_len, exitcode)
+                 arg_count = arg_count + 1
+                 call checkexit(exitcode)
+                 read(arg_real,'(f10.4)') ax_del(nax)
+
+                 write(*,4242) 'Prop: ',trim(arg_flag),' spans ',ax_min(nax),ax_max(nax),' step ',ax_del(nax)
+
+              endif   ! End of axis definition check
+           enddo   ! End of looping over all command line args
+        endif   ! End of command line length check
+
+4242    format(a6,a2,a7,f10.4,x,f10.4,a6,f10.4)
+
+        ! Data loading and/or set up
+        write(*,*) 'Allocating space...'
+        ! By default, the number of boxes is 1 (a collapsed axis)
+        ! and the number of edges is 2 (2 edges around a single box).
+        ne = 2
+        nc = 1
+        nc_max = 0
+
+        !------Grid Initializations------
+
+        write(*,*) '------------------------------------'
+        write(*,*) ' Grid (min,max,delta,npts)'
+        ! Loop over just the axes that are specified.
+        ! The remaining axes will have nc = 1, ne = 2.
+        do k = 1,nax
+           ! Number of boxes
+           nc(k) = aint((ax_max(k) - ax_min(k))/ax_del(k))
+
+           ! Keep track of the longest axis dimension
+           if ( nc(k) .gt. nc_max ) nc_max = nc(k)
+
+           ! Number of box edges
+           ne(k) = nc(k) + 1
+
+           ! Print results to screen for error checking
+           write(*,*) 'Axis ',k,': ',ax_min(k),ax_max(k),ax_del(k),nc(k)
+        enddo
+        write(*,*) '------------------------------------'
+
+        allocate(bavg(nc(1),nc(2)))
+        allocate(bvar(nc(1),nc(2)))
+        allocate(bcnt(nc(1),nc(2)))
+        bavg = dep_mask
+        bvar = dep_mask
+        bcnt = 0
+        
+        ! Use the longest dimension to allocate space
+        ! for the center and edge locations arrays.
+        allocate(edges(nax,nc_max))
+        allocate(centers(nax,nc_max))
+
+        write(*,*) 'Compute histobox edges and centers...'
+        ! Only loop over the active axes.
+        do k = 1,nax
+
+           ! Set minimum edge value
+           edges(k,1) = ax_min(k)
+
+           ! March along the axis adding all
+           ! remaining box edges based on increment.
+           do p = 2,ne(k)
+              edges(k,p) = edges(k,p-1) + ax_del(k) 
+           enddo
+
+           ! Centers are the mean value of the
+           ! surrouding edges.
+           do p = 1,nc(k)
+              centers(k,p) = (edges(k,p) + edges(k,p+1))/2.0
+           enddo
+
+           !write(*,*) '======================================='
+           !write(*,*) 'Axis ',k,' centers:'
+           !do p = 1,nc(k)
+           !   write(*,*) centers(k,p)
+           !enddo
+        enddo
+        write(*,*) '======================================='
+
+        !------Create, define the output netcdf file-------
+        
+        write(*,*) 'Creating output cdf file...'
+        ncoid = nccre(bfnam,ncclobber,exitcode)
+
+        write(*,*) 'Creating dimensions...'
+        do k = 1,nax_max
+           ax_did(k) = ncddef(ncoid,ax_vnam(k),nc(k),exitcode)
+        enddo
+
+        write(*,*) 'Creating variables...'
+        do k = 1,nax_max
+           ax_vid(k) = ncvdef(ncoid,ax_vnam(k),ncfloat,1,ax_did(k),exitcode)
+           if ( index(trim(ax_vnam(k)),'dep') .ne. 0 ) then
+              ! Indicate in netcdf file that this axis is
+              ! positive down
+              call ncaptc(ncoid,ax_vid(k),'positive',ncchar,4,'down',exitcode)
+           endif
+           if ( index(trim(ax_vnam(k)),'rho') .ne. 0 ) then
+              ! Density axis is also positive down
+              call ncaptc(ncoid,ax_vid(k),'positive',ncchar,4,'down',exitcode)
+           endif
+        enddo
+        
+        ! The fill value complicates matters for plotting in
+        ! Ferret.  Just remove it here and use ignore0 in
+        ! Ferret.
+        !call ncapt(ncoid,hvid,'_FillValue',ncint,1,0,exitcode)
+
+        bavid = ncvdef(ncoid,bvnam,ncfloat,nax_max,ax_did,exitcode)
+        bvvid = ncvdef(ncoid,'bstd',ncfloat,nax_max,ax_did,exitcode)
+
+        write(*,*) 'Done creating file...'
+        call ncendf(ncoid,exitcode)
+
+        write(*,*) 'Writing node locations to output file...'
+        do k = 1,nax_max
+           call ncvpt(ncoid,ax_vid(k),1,nc(k),centers(k,1:nc(k)),exitcode)
+        enddo
+
+        ! Writing vectors are not affected by input file.
+        do k = 1,nax_max
+           writstart(k) = 1
+           writcount(k) = nc(k)
+        enddo
+        
+!=====================Load model grid=======================
+
+        call load_orca_mesh_mask
+
+        allocate(bdep(imt,jmt))
+        do j = 1,jmt
+           do i = 1,imt
+              do k = 1,km
+                 if ( k .le. kmt(i,j) ) then
+                    bdep(i,j) = bdep(i,j) + dzt(i,j,k)
+                 endif
+              enddo
+              ! Check limits
+              if ( (bdep(i,j).gt.10000.0).or.(bdep(i,j).lt.0.0) ) then
+                 bdep(i,j) = 0.0
+              endif
+           enddo
+        enddo
+        
+!=====================Sort Points===========================
+
+        write(*,*) 'Computing mean depths...'
+
+        ! Initialize valid point counter
+        nall = 0
+        nout = 0
+        
+        do j = 1,jmt
+           do i = 1,imt
+              do k = 1,nax
+                 if ( index(trim(ax_vnam(k)),lamvnam).ne.0) then
+                    ! Longitude
+                 elseif ( index(trim(ax_vnam(k)),lamvnam).ne.0) then
+                    ! Latitude
+
+                 else
+                    write(*,*) 'ERROR: Unknown axis type!'
+              ax_ind(1) = binsearch(edges(1,:),real(xt(i,j)),1,ne(1))
+              ax_ind(2) = binsearch(edges(2,:),real(yt(i,j)),1,ne(2))
+                    
+              if ( (ax_ind(1).gt.0).and.(ax_ind(2).gt.0) ) then
+                 nall = nall + 1
+ 
+                 ! Push the stack for the running mean and
+                 ! variance of requested properties at this
+                 ! location.
+                 call olavgvar(bdep(i,j),bcnt(ax_ind(1),ax_ind(2)),&
+                                         bavg(ax_ind(1),ax_ind(2)),&
+                                         bvar(ax_ind(1),ax_ind(2)))
+
+              else
+                 ! This point is not in domain and
+                 ! not sorted
+                 nout = nout + 1
+
+              endif   !---End of point found check---
+           enddo   !---End of looping over i points---
+        enddo   !---End of looping over j points---
+
+        ! Final computations for the standard deviation
+        ! of the variables.
+        do j = 1,nc(2)
+           do i = 1,nc(1)
+              ! Check that all boxes are good.
+              if ((bcnt(i,j).eq.0).or.(bavg(i,j).eq.dep_mask)) then
+                 ! Bad point
+                 bvar(i,j) = 0.0
+              else
+                 ! Good point
+                 bvar(i,j) = sqrt(bvar(i,j)/float(bcnt(i,j)))
+              endif
+           enddo
+        enddo
+
+        write(*,*) 'Write bathymetry to output file...'
+        call ncvpt(ncoid,bavid,writstart,writcount,bavg,exitcode)
+        call ncvpt(ncoid,bvvid,writstart,writcount,bvar,exitcode)
+        write(*,*) '-----------------------------------------------------'
+        write(*,*) 'Started with ntraj*npts points to sort: ',ntraj*npts
+        write(*,*) 'Number of points used in sorting: ',nall
+        write(*,*) 'Number of points outside the domain: ',nout
+        write(*,*) '-----------------------------------------------------'
+        write(*,*) 'Close output file...'
+        call ncclos(ncoid,exitcode)
+
+        write(*,*) 'End of tcdf_get_bot.'
+
+      end program tcdf_get_bot
+
+!----------------------------------------
+
+!---------------------------------------
+
+      subroutine print_help()
+
+!---------------------------------------
+! This subroutine prints help info
+! about this program.
+!---------------------------------------
+
+        write(*,*) '-------------------------------------------'
+        write(*,*) ' tcdf_get_bot   -<axis1> min max del'
+        write(*,*) '               [-<axis2> min max del]'
+        write(*,*) '           [-h] [-U] [-V] [-F]'
+        write(*,*) ' '
+        write(*,*) '-------------------------------------------'
+        write(*,*) ' This program will compute a 2D regridded'
+        write(*,*) ' bathymetry of a given input model bathymetry'
+        write(*,*) ' based on the axes specifed by the user.'
+        write(*,*) ' The point of this program is to allow for'
+        write(*,*) ' creating a bathymetry consistent with the'
+        write(*,*) ' binning resolution defined by tcdfhist.'
+        write(*,*) '-------------------------------------------'
+        write(*,*) ' '
+        write(*,*) ' The axes must be:'
+        write(*,*) ' -X longitude [deg]'
+        write(*,*) ' -Y latitude  [deg]'
+        write(*,*) ' '
+        write(*,*) '-------------------------------------------'
+        write(*,*) ' '
+        write(*,*) '-U, -V, and -F flags will compute the depth'
+        write(*,*) 'based on the u, v, and f-grids, respectively.'
+        write(*,*) 'THIS IS NOT YET IMPLEMENTED.'
+        write(*,*) '-------------------------------------------'
+        return
+
+      end subroutine print_help
+
+!---------------------------------------
