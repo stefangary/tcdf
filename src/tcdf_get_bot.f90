@@ -355,12 +355,14 @@
         do j = 1,jmt
            do i = 1,imt
 
+              write(*,*) 'Working on ',i,j
+              
               nax_pt_found = 0
               do k = 1,nax
-                 if ( index(trim(ax_vnam(k)),lamvnam).ne.0) then
+                 if ( index(trim(ax_vnam(k)),trim(lamvnam)).ne.0) then
                     ! Longitude
                     ax_ind(k) = binsearch(edges(k,:),real(xt(i,j)),1,ne(k))
-                 elseif ( index(trim(ax_vnam(k)),lamvnam).ne.0) then
+                 elseif ( index(trim(ax_vnam(k)),trim(phivnam)).ne.0) then
                     ! Latitude
                     ax_ind(k) = binsearch(edges(k,:),real(yt(i,j)),1,ne(k))
                  else
